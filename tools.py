@@ -5,8 +5,8 @@ import numpy as np
 from numpy import array, nan, isnan, inf, isinf, arange, linspace, matmul, resize
 from numpy.linalg import norm
 from math import radians, degrees, sqrt, sin, cos, tan, atan, pi, ceil, floor, log10, gcd
-from multiprocessing import Process, cpu_count
-from threading import Thread
+import multiprocessing as mp
+import threading as th
 from tqdm import tqdm
 
 import pandas as pd
@@ -343,7 +343,7 @@ def show_correlation(df, show_num=True, cmap='bwr', units='', rnd=4, savefig=Fal
     plt.suptitle('Correlation', fontsize=16, fontweight='bold')
     ax.set_aspect('equal')
     im = ax.imshow(cor, interpolation='nearest',
-              cmap=cmap)  # RGB: 'turbo', # blue vs red: 'bwr', # 2side: 'twilight','twilight_shifted'
+                   cmap=cmap)  # RGB: 'turbo', # blue vs red: 'bwr', # 2side: 'twilight','twilight_shifted'
 
     clrbar = fig.colorbar(im, orientation='vertical')
     clrbar.ax.tick_params(labelsize=12)
@@ -372,32 +372,51 @@ def show_correlation(df, show_num=True, cmap='bwr', units='', rnd=4, savefig=Fal
     plt.show()
 
 
+@timeit()
 def run_cpu_tasks_in_parallel(*tasks):
-    max_processes = cpu_count()
-    print("Максимальное количество процессов:", max_processes)
-    running_tasks = [Process(target=task) for task in tasks]
-    for running_task in running_tasks: running_task.start()
-    for running_task in running_tasks: running_task.join()
+    processes = list()
+    for task in tasks:
+        if len(task) == 1:
+            processes.append(mp.Process(target=task[0]))
+        elif len(task) == 2:
+            processes.append(mp.Process(target=task[0], args=task[1]))
+        else:
+            raise 'Incorrect values'
+    for process in processes: process.start()
+    for process in processes: process.join()
 
 
+@timeit()
 def run_thread_tasks_in_parallel(*tasks):
-    running_tasks = [Thread(target=task) for task in tasks]
-    for running_task in running_tasks: running_task.start()
-    for running_task in running_tasks: running_task.join()
+    threads = list()
+    for task in tasks:
+        if len(task) == 1:
+            threads.append(th.Thread(target=task[0]))
+        elif len(task) == 2:
+            threads.append(th.Thread(target=task[0], args=task[1]))
+        else:
+            raise 'Incorrect values'
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
 
 
 def test_f1():
     time.sleep(1)
     a = list()
-    for i in range(100000): a.append(i ** 0.5)
+    for i in range(100_000): a.append(i ** 0.5)
     del a
 
 
 def test_f2():
     time.sleep(2)
     a = list()
-    for i in range(100000): a.append(i ** 0.5)
+    for i in range(100_000): a.append(i ** 0.5)
     del a
+
+
+def meke_calc(n):
+    time.sleep(n)
+    return n
 
 
 def smart_input(message: str = '', error_message: str = '',
@@ -498,21 +517,15 @@ def input_clever(message: str = ''):
 
 
 if __name__ == '__main__':
-    print(smart_input(message='>>>', borders=[0, 7], borders_exceptions=[3]))
+    run_cpu_tasks_in_parallel((test_f1,), (test_f2,))
+    run_thread_tasks_in_parallel((test_f1,), (test_f2,))
+
+    with mp.Pool(mp.cpu_count()) as pool:
+        results = pool.map(meke_calc, [1, 2, 3])
+    print(f'results: {results}')
+
     exit()
-
-    st = time.monotonic()
-    test_f1()
-    test_f2()
-    print('inline', round(time.monotonic() - st, 3))
-
-    st = time.monotonic()
-    run_cpu_tasks_in_parallel(test_f1, test_f2)
-    print('multi', round(time.monotonic() - st, 3))
-
-    st = time.monotonic()
-    run_thread_tasks_in_parallel(test_f1, test_f2)
-    print('thread', round(time.monotonic() - st, 3))
+    print(smart_input(message='>>>', borders=[0, 7], borders_exceptions=[3]))
 
     print(isnum(str(nan)))
     print(rounding(-23456734567.8, 2))  # bug
