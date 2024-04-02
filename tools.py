@@ -23,6 +23,21 @@ import colorama
 colorama.init(autoreset=True)
 
 
+def find(name: str, path: str = os.getcwd()) -> list[str]:
+    """Поиск файла/директории по пути"""
+    is_file = True if '.' in name else False
+    result = list()
+    for root, dirs, files in os.walk(path):
+        if not is_file:
+            for dir in dirs:
+                if name in dir:
+                    result.append(os.path.join(root, dir))
+        for file in files:
+            if name in file:
+                result.append(os.path.join(root, file))
+    return result
+
+
 def derivative(f, a, method='central', dx=0.01):
     """Compute the difference formula for f'(a) with step size h.
 
@@ -299,7 +314,7 @@ class Axis:
 def COOR(A1, C1, A2, C2): return (C1 - C2) / (A2 - A1), (A2 * C1 - A1 * C2) / (A2 - A1)
 
 
-def LINE(p1, p2) -> dict:
+def LINE(p1, p2) -> dict[str: float]:
     """Нахождение коэффициентов A, B, C прямой по двум точкам p1 и p2"""
     return {'A': (p2[1] - p1[1]) / (p2[0] - p1[0]), 'B': -1, 'C': (p2[0] * p1[1] - p1[0] * p2[1]) / (p2[0] - p1[0])}
 

@@ -1,9 +1,31 @@
+import pandas as pd
 import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from tools import export2
+
+
+def detect_outliers(df, method='3sigma'):
+    assert isinstance(df, pd.DataFrame), 'type(df) is DataFrame!'
+    assert isinstance(method, str), 'type(method) is str!'
+    method = method.strip().lower()
+    assert method in ('3sigma', 'tukey'), 'method in ("3sigma", "Tukey")!'
+
+    outliers = pd.DataFrame()
+    for col in df.select_dtypes(include='number').columns:
+        if method == '3sigma':
+            mean = df[col].mean()
+            std = df[col].std()
+            lower_bound, upper_bound = mean - 3 * std, mean + 3 * std
+        elif method == 'tukey':
+            q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)
+            iqr = q3 - q1
+            lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        col_outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+        outliers = pd.concat([outliers, col_outliers])
+    return outliers
 
 
 def find_drop_features(com_m, threshold: float = 0.9):
@@ -28,21 +50,24 @@ def img_show(img, title='image', figsize=(12, 12)):
 
 
 def training_plot(history, figsize=(12, 9), savefig=False):
-    cols = len(history.history.keys()) // 2
+    num_metrics = len(history.history.keys()) // 2
 
     fg = plt.figure(figsize=figsize)  # размер в дюймах
-    gs = fg.add_gridspec(1, cols)  # строки, столбцы
+    gs = fg.add_gridspec(1, num_metrics)  # строки, столбцы
     fg.suptitle('Training and Validation', fontsize=16, fontweight='bold')
 
-    for i in range(cols):
+    for i in range(num_metrics):
+        metric_name = list(history.history.keys())[i]
+        val_metric_name = list(history.history.keys())[i + num_metrics]
+
         fg.add_subplot(gs[0, i])  # позиция графика
         plt.grid(True)  # сетка
-        plt.plot(list(history.history.values())[i], color='blue', label=list(history.history.keys())[i])
-        plt.plot(list(history.history.values())[i + cols], color='red', label=list(history.history.keys())[i + cols])
+        plt.plot(history.history[metric_name], color='blue', label=metric_name)
+        plt.plot(history.history[val_metric_name], color='red', label=val_metric_name)
         plt.xlabel('Epoch', fontsize=12)
         plt.ylabel('Error', fontsize=12)
         plt.xlim(0, max(history.epoch))
-        plt.ylim(0, list(history.history.values())[i][-1] * 2)
+        plt.ylim(0, 2 * np.mean([history.history[metric_name][-1], history.history[val_metric_name][-1]]))
         plt.legend()
     if savefig: export2(plt, file_name='training_plot', file_extension='png')
     plt.show()
