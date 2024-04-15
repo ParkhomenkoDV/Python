@@ -1,7 +1,13 @@
 *.mp4
+DS/
 SQLite/
 ML/
 PyGame/
+Flask/
+Теория вероятностей/
+Нейросети на Python/
+Добрый Python ООП/
+ЦОС/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

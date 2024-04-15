@@ -1,17 +1,93 @@
+import sys
+import os
+from tqdm import tqdm
+import pickle
+import warnings
+
+import multiprocessing as mp
+import threading as th
+
 import pandas as pd
 import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from sklearn.preprocessing import LabelEncoder
+
+from sklearn.preprocessing import (Normalizer,
+                                   StandardScaler, MinMaxScaler, MaxAbsScaler,
+                                   RobustScaler, QuantileTransformer, PowerTransformer)
+
+from sklearn.model_selection import train_test_split
+
+from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
+                                  PassiveAggressiveClassifier)
+from sklearn.linear_model import (LinearRegression, Ridge, Lasso, ElasticNet, Lars, LassoLars,
+                                  OrthogonalMatchingPursuit,
+                                  BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
+                                  PoissonRegressor, HuberRegressor,
+                                  TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor)
+from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier,
+                              GradientBoostingClassifier, AdaBoostClassifier, HistGradientBoostingClassifier,
+                              StackingClassifier, VotingClassifier)
+from sklearn.ensemble import (RandomForestRegressor, ExtraTreesRegressor, BaggingRegressor,
+                              GradientBoostingRegressor, AdaBoostRegressor, HistGradientBoostingRegressor,
+                              StackingRegressor, VotingRegressor)
+from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
+from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
+
+from sklearn.metrics import (mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
+                             coverage_error,
+                             mean_absolute_percentage_error, median_absolute_error,
+                             mean_squared_log_error, root_mean_squared_log_error)
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, r2_score,
+                             d2_absolute_error_score, ndcg_score, rand_score, dcg_score, fbeta_score,
+                             adjusted_rand_score, silhouette_score, completeness_score, homogeneity_score,
+                             jaccard_score, consensus_score, v_measure_score, brier_score_loss, d2_tweedie_score,
+                             cohen_kappa_score, d2_pinball_score, mutual_info_score, adjusted_mutual_info_score,
+                             average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
+                             top_k_accuracy_score, calinski_harabasz_score)
+
+SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
+
 from tools import export2
 
 
-def detect_outliers(df, method='3sigma'):
-    assert isinstance(df, pd.DataFrame), 'type(df) is DataFrame!'
-    assert isinstance(method, str), 'type(method) is str!'
+def get_one_hot(df, cols):
+    for col in cols:
+        dummies = pd.get_dummies(df[col], prefix=col)
+        df = pd.concat([df, dummies], axis=1)
+    return df
+
+
+def get_label(df, cols):
+    df = df.copy()
+    for col in cols:
+        le = LabelEncoder()
+        labels = le.fit_transform(df[col])
+        df[col] = labels
+    return df
+
+
+def get_count(df, cols):
+    df = df.copy()
+
+    for col in cols:
+        df[col] = df[col].astype('str')
+
+    ce = CountEncoder(handle_unknown=-1)
+    ce.fit(df[cols])
+    df[cols] = ce.transform(df[cols])
+    return df
+
+
+def detect_outliers(df: pd.DataFrame, method: str = '3sigma'):
+    assert_sms = 'Incorrect assert '
+    assert type(df) is pd.DataFrame, assert_sms + 'type(df) is DataFrame'
+    assert type(method) is str, assert_sms + 'type(method) is str'
     method = method.strip().lower()
-    assert method in ('3sigma', 'tukey'), 'method in ("3sigma", "Tukey")!'
+    assert method in ('3sigma', 'tukey'), assert_sms + 'method in ("3sigma", "Tukey")!'
 
     outliers = pd.DataFrame()
     for col in df.select_dtypes(include='number').columns:
@@ -28,7 +104,7 @@ def detect_outliers(df, method='3sigma'):
     return outliers
 
 
-def find_drop_features(com_m, threshold: float = 0.9):
+def find_drop_features(com_m, threshold: float = 0.9) -> list:
     com_m = com_m.abs()
 
     # верхний треугольник матрицы корреляции без диагонали
@@ -106,3 +182,171 @@ def pairplot(df, figsize=(9, 9), savefig=False):
     g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
     plt.tight_layout()
     if savefig: export2(plt, file_name='pair_plot', file_extension='png')
+
+
+class DataFrame(pd.DataFrame):
+    pass
+
+
+class Model:
+    LINEAR_MODEL_CLASSIFIERS = [SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
+                                PassiveAggressiveClassifier]
+    LINEAR_MODEL_REGRESSORS = [LinearRegression, Ridge, Lasso, ElasticNet, Lars, LassoLars,
+                               OrthogonalMatchingPursuit,
+                               BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
+                               PoissonRegressor, HuberRegressor,
+                               TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor]
+    ENSEMBLE_CLASSIFIERS = [RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier,
+                            GradientBoostingClassifier, AdaBoostClassifier, HistGradientBoostingClassifier,
+                            StackingClassifier, VotingClassifier]
+    ENSEMBLE_REGRESSORS = [RandomForestRegressor, ExtraTreesRegressor, BaggingRegressor,
+                           GradientBoostingRegressor, AdaBoostRegressor, HistGradientBoostingRegressor,
+                           StackingRegressor, VotingRegressor]
+    TREE_CLASSIFIERS = [DecisionTreeClassifier, ExtraTreeClassifier]
+    TREE_REGRESSORS = [DecisionTreeRegressor, ExtraTreeRegressor]
+
+    ALL_MODELS = (LINEAR_MODEL_CLASSIFIERS + LINEAR_MODEL_REGRESSORS +
+                  ENSEMBLE_CLASSIFIERS + ENSEMBLE_REGRESSORS +
+                  TREE_CLASSIFIERS + TREE_REGRESSORS)
+
+    ALL_ERRORS = [mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
+                  coverage_error,
+                  mean_absolute_percentage_error, median_absolute_error,
+                  mean_squared_log_error, root_mean_squared_log_error]
+
+    ALL_SCORES = [accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, r2_score,
+                  d2_absolute_error_score, ndcg_score, rand_score, dcg_score, fbeta_score,
+                  adjusted_rand_score, silhouette_score, completeness_score, homogeneity_score,
+                  jaccard_score, consensus_score, v_measure_score, brier_score_loss, d2_tweedie_score,
+                  cohen_kappa_score, d2_pinball_score, mutual_info_score, adjusted_mutual_info_score,
+                  average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
+                  top_k_accuracy_score, calinski_harabasz_score]
+
+    def __init__(self, model=None):
+
+        assert_sms = 'Incorrect assert:'
+
+        if not model:
+            self.__model = None
+
+        elif type(model) is str:
+            model = model.strip().replace('()', '')
+            assert model in (class_model.__name__ for class_model in self.ALL_MODELS), \
+                f'{assert_sms} model in {[class_model.__name__ for class_model in self.ALL_MODELS]}'
+
+            self.__model = next((class_model() for class_model in self.ALL_MODELS if model == class_model.__name__),
+                                None)
+
+        elif type(model) in self.ALL_MODELS:
+            self.__model = model
+
+        else:
+            raise AssertionError(
+                f'{assert_sms} type(model) in {[str.__name__] + [class_model.__name__ for class_model in self.ALL_MODELS]}')
+
+    def __call__(self):
+        return self.__model
+
+    def __repr__(self):
+        return str(self.__model)
+
+    @property
+    def intercept_(self):
+        try:
+            return self.__model.intercept_
+        except Exception as e:
+            print(e)
+
+    @property
+    def coef_(self):
+        try:
+            return self.__model.coef_
+        except Exception as e:
+            print(e)
+
+    @property
+    def expression(self):
+        try:
+            return f'y = {self.intercept_} + {" + ".join([f"{num} * x{i + 1}" for i, num in enumerate(self.coef_)])}'
+        except Exception as e:
+            print(e)
+
+    @property
+    def feature_importances_(self):
+        try:
+            return self.__model.feature_importances_
+        except Exception as e:
+            print(e)
+
+    def fit(self, x, y):
+        self.__model.fit(x, y)
+
+    def predict(self, x):
+        return self.__model.predict(x)
+
+    def prediction(self, y_true, y_possible, suptitle='Prediction', bins=40, savefig=False):
+
+        fg = plt.figure(figsize=(12, 8))
+        plt.suptitle(suptitle, fontsize=14, fontweight='bold')
+        gs = fg.add_gridspec(1, 2)
+
+        fg.add_subplot(gs[0, 0])
+        plt.grid(True)
+        plt.hist(y_true - y_possible, bins=bins)
+
+        fg.add_subplot(gs[0, 1])
+        plt.grid(True)
+        plt.scatter(y_true, y_possible, c='red')
+        plt.plot(y_true, y_true, color='blue')
+
+        if savefig: export2(plt, file_name=suptitle, file_extension='png')
+
+    def fit_all(self, x, y, exceptions=True):
+
+        '''
+        def fit_model(Model):
+            return Model().fit(x, y)
+
+        with mp.Pool(mp.cpu_count) as pool:
+            results = pool.map(fit_model, self.MODELS)
+
+        return results
+        '''
+
+        warnings.filterwarnings('ignore')
+
+        result = list()
+        for class_model in tqdm(self.ALL_MODELS):
+            try:
+                result.append(Model(class_model().fit(x, y)))
+            except Exception as e:
+                if exceptions: print(e)
+
+        warnings.filterwarnings('default')
+
+        return result
+
+    def errors(self, y_true, y_predict, exceptions=True) -> dict[str:float]:
+        errors = dict()
+        for error in self.ALL_ERRORS:
+            try:
+                errors[error.__name__] = error(y_true, y_predict)
+            except Exception as e:
+                if exceptions: print(e)
+        return errors
+
+    def scores(self, y_true, y_predict, exceptions=True) -> dict[str:float]:
+        scores = dict()
+        for score in self.ALL_SCORES:
+            try:
+                scores[score.__name__] = score(y_true, y_predict)
+            except Exception as e:
+                if exceptions: print(e)
+        return scores
+
+    def save(self, path: str) -> None:
+        pickle.dump(self.__model, open(path, 'wb'))
+
+    def load(self, path: str):
+        self.__model = pickle.load(open(path, 'rb'))
+        return self

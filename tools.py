@@ -347,12 +347,12 @@ def correlation(data, *args, method='pearson', dropna=False, **kwargs):
     return cor
 
 
-def show_correlation(df, show_num=True, cmap='bwr', units='', rnd=4, savefig=False, figsize=(9, 9), **kwargs):
+def show_correlation(df, show_num=True, cmap='bwr', units='', fmt=4, savefig=False, figsize=(9, 9), **kwargs):
     cor = correlation(df, **kwargs)
     if cor is None: return
-    if not isnum(rnd, type_num='int') or rnd < 0: rnd = 4
+    if not isnum(fmt, type_num='int') or fmt < 0: fmt = 4
     if units: cor = cor * 100
-    cor = cor.round(rnd)
+    cor = cor.round(fmt)
 
     fig, ax = plt.subplots(figsize=figsize)
     plt.suptitle('Correlation', fontsize=16, fontweight='bold')
