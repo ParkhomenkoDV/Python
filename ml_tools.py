@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, TargetEncoder, OrdinalEncoder
 
 from sklearn.preprocessing import (Normalizer,
                                    StandardScaler, MinMaxScaler, MaxAbsScaler,
@@ -28,14 +28,17 @@ from sklearn.linear_model import (LinearRegression, Ridge, Lasso, ElasticNet, La
                                   BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
                                   PoissonRegressor, HuberRegressor,
                                   TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor)
+from sklearn.neighbors import (NearestNeighbors, KNeighborsClassifier, KNeighborsRegressor,
+                               RadiusNeighborsClassifier, RadiusNeighborsRegressor)
+from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
+from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
+from sklearn.tree import plot_tree
 from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier,
                               GradientBoostingClassifier, AdaBoostClassifier, HistGradientBoostingClassifier,
                               StackingClassifier, VotingClassifier)
 from sklearn.ensemble import (RandomForestRegressor, ExtraTreesRegressor, BaggingRegressor,
                               GradientBoostingRegressor, AdaBoostRegressor, HistGradientBoostingRegressor,
                               StackingRegressor, VotingRegressor)
-from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
-from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
 
 from sklearn.metrics import (mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
                              coverage_error,
@@ -80,41 +83,6 @@ def get_count(df, cols):
     ce.fit(df[cols])
     df[cols] = ce.transform(df[cols])
     return df
-
-
-def detect_outliers(df: pd.DataFrame, method: str = '3sigma'):
-    assert_sms = 'Incorrect assert '
-    assert type(df) is pd.DataFrame, assert_sms + 'type(df) is DataFrame'
-    assert type(method) is str, assert_sms + 'type(method) is str'
-    method = method.strip().lower()
-    assert method in ('3sigma', 'tukey'), assert_sms + 'method in ("3sigma", "Tukey")!'
-
-    outliers = pd.DataFrame()
-    for col in df.select_dtypes(include='number').columns:
-        if method == '3sigma':
-            mean = df[col].mean()
-            std = df[col].std()
-            lower_bound, upper_bound = mean - 3 * std, mean + 3 * std
-        elif method == 'tukey':
-            q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)
-            iqr = q3 - q1
-            lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-        col_outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
-        outliers = pd.concat([outliers, col_outliers])
-    return outliers
-
-
-def find_drop_features(com_m, threshold: float = 0.9) -> list:
-    com_m = com_m.abs()
-
-    # верхний треугольник матрицы корреляции без диагонали
-    uptriangle = com_m.where(np.triu(np.ones(com_m.shape), k=1).astype(bool))
-
-    # индексы столбцов с корреляцией выше порога
-    to_drop = [column for column in uptriangle.columns[1:]
-               if any(threshold <= uptriangle[column]) or all(uptriangle[column].isna())]
-
-    return to_drop
 
 
 def img_show(img, title='image', figsize=(12, 12)):
@@ -185,7 +153,39 @@ def pairplot(df, figsize=(9, 9), savefig=False):
 
 
 class DataFrame(pd.DataFrame):
-    pass
+
+    def detect_outliers(self, method: str = '3sigma'):
+        assert_sms = 'Incorrect assert '
+        assert type(self) is DataFrame, assert_sms + 'type(df) is DataFrame'
+        assert type(method) is str, assert_sms + 'type(method) is str'
+        method = method.strip().lower()
+        assert method in ('3sigma', 'tukey'), assert_sms + 'method in ("3sigma", "Tukey")!'
+
+        outliers = pd.DataFrame()
+        for col in self.select_dtypes(include='number').columns:
+            if method == '3sigma':
+                mean = self[col].mean()
+                std = self[col].std()
+                lower_bound, upper_bound = mean - 3 * std, mean + 3 * std
+            elif method == 'tukey':
+                q1, q3 = self[col].quantile(0.25), self[col].quantile(0.75)
+                iqr = q3 - q1
+                lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+            col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
+            outliers = pd.concat([outliers, col_outliers])
+        return outliers
+
+    def find_drop_features(self, threshold: float = 0.9) -> list:
+        com_m = self.corr().abs()
+
+        # верхний треугольник матрицы корреляции без диагонали
+        uptriangle = com_m.where(np.triu(np.ones(com_m.shape), k=1).astype(bool))
+
+        # индексы столбцов с корреляцией выше порога
+        to_drop = [column for column in uptriangle.columns[1:]
+                   if any(threshold <= uptriangle[column]) or all(uptriangle[column].isna())]
+
+        return to_drop
 
 
 class Model:
@@ -196,18 +196,21 @@ class Model:
                                BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
                                PoissonRegressor, HuberRegressor,
                                TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor]
+    NEIGHBORS = [NearestNeighbors, KNeighborsClassifier, KNeighborsRegressor,
+                 RadiusNeighborsClassifier, RadiusNeighborsRegressor]
+    TREE_CLASSIFIERS = [DecisionTreeClassifier, ExtraTreeClassifier]
+    TREE_REGRESSORS = [DecisionTreeRegressor, ExtraTreeRegressor]
     ENSEMBLE_CLASSIFIERS = [RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier,
                             GradientBoostingClassifier, AdaBoostClassifier, HistGradientBoostingClassifier,
                             StackingClassifier, VotingClassifier]
     ENSEMBLE_REGRESSORS = [RandomForestRegressor, ExtraTreesRegressor, BaggingRegressor,
                            GradientBoostingRegressor, AdaBoostRegressor, HistGradientBoostingRegressor,
                            StackingRegressor, VotingRegressor]
-    TREE_CLASSIFIERS = [DecisionTreeClassifier, ExtraTreeClassifier]
-    TREE_REGRESSORS = [DecisionTreeRegressor, ExtraTreeRegressor]
 
     ALL_MODELS = (LINEAR_MODEL_CLASSIFIERS + LINEAR_MODEL_REGRESSORS +
-                  ENSEMBLE_CLASSIFIERS + ENSEMBLE_REGRESSORS +
-                  TREE_CLASSIFIERS + TREE_REGRESSORS)
+                  NEIGHBORS +
+                  TREE_CLASSIFIERS + TREE_REGRESSORS +
+                  ENSEMBLE_CLASSIFIERS + ENSEMBLE_REGRESSORS)
 
     ALL_ERRORS = [mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
                   coverage_error,
@@ -301,6 +304,12 @@ class Model:
 
         if savefig: export2(plt, file_name=suptitle, file_extension='png')
 
+    def plot_tree(self, **kwargs):
+        try:
+            plot_tree(self.__model, filled=kwargs.get('filled', True))
+        except Exception as e:
+            if e: print(e)
+
     def fit_all(self, x, y, exceptions=True):
 
         '''
@@ -318,7 +327,8 @@ class Model:
         result = list()
         for class_model in tqdm(self.ALL_MODELS):
             try:
-                result.append(Model(class_model().fit(x, y)))
+                model = class_model().fit(x, y)
+                result.append(Model(model))
             except Exception as e:
                 if exceptions: print(e)
 
@@ -350,3 +360,10 @@ class Model:
     def load(self, path: str):
         self.__model = pickle.load(open(path, 'rb'))
         return self
+
+
+if __name__ == '__main__':
+    df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
+    print(df)
+    print(df.detect_outliers())
+    print(df.find_drop_features())
