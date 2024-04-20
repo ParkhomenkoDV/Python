@@ -144,11 +144,11 @@ def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False)
 class DataFrame(pd.DataFrame):
 
     def detect_outliers(self, method: str = '3sigma'):
-        assert_sms = 'Incorrect assert '
-        assert type(self) is DataFrame, assert_sms + 'type(df) is DataFrame'
-        assert type(method) is str, assert_sms + 'type(method) is str'
+        assert_sms = 'Incorrect assert'
+        assert type(self) is DataFrame, f'{assert_sms} type(df) is DataFrame'
+        assert type(method) is str, f'{assert_sms} type(method) is str'
         method = method.strip().lower()
-        assert method in ('3sigma', 'tukey'), assert_sms + 'method in ("3sigma", "Tukey")!'
+        assert method in ('3sigma', 'tukey'), f'{assert_sms} method in ("3sigma", "Tukey")!'
 
         outliers = pd.DataFrame()
         for col in self.select_dtypes(include='number').columns:
@@ -162,9 +162,9 @@ class DataFrame(pd.DataFrame):
                 lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
             col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
             outliers = pd.concat([outliers, col_outliers])
-        return outliers
+        return DataFrame(outliers)
 
-    def find_drop_features(self, threshold: float = 0.85) -> list:
+    def find_corr_features(self, threshold: float = 0.85) -> list[str]:
         com_m = self.corr().abs()
 
         # верхний треугольник матрицы корреляции без диагонали
@@ -175,6 +175,23 @@ class DataFrame(pd.DataFrame):
                    if any(threshold <= uptriangle[column]) or all(uptriangle[column].isna())]
 
         return to_drop
+
+    def mutual_info_score(self, target: str) -> dict[str:float]:
+        """Взаимная информация"""
+        result = dict()
+        for column in self.drop([target], axis=1):
+            result[column] = mutual_info_score(self[column], self[target])
+        result = sorted(result.items(), key=lambda x: x[1], reverse=True)
+        return dict(result)
+
+    def feature_importances_(self, target: str):
+        """Важные признаки для классификации"""
+        model = RandomForestClassifier()
+        try:
+            model.fit(self.drop([target], axis=1), self[target])
+            return pd.Series(model.features_importances_, index=self.columns[:-1]).sort_values(ascending=True)
+        except Exception as e:
+            print(e)
 
     def corrplot(self, figsize=(12, 12), title='Correlation', fmt=3, savefig=False):
         plt.figure(figsize=figsize)
@@ -196,8 +213,9 @@ class DataFrame(pd.DataFrame):
         self.hist(figsize=figsize, bins=bins)
         if savefig: export2(plt, file_name='histplot', file_extension='png')
 
-    def boxplot(self, figsize=(12, 9), scale=False, fill=True, grid=True, savefig=False):
+    def boxplot(self, figsize=(12, 9), title='boxplot', scale=False, fill=True, grid=True, savefig=False):
         plt.figure(figsize=figsize)
+        plt.title(title, fontsize=16, fontweight='bold')
         plt.grid(grid)
         if not scale:
             sns.boxplot(self, fill=fill)
@@ -387,4 +405,4 @@ if __name__ == '__main__':
     df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
     print(df)
     print(df.detect_outliers())
-    print(df.find_drop_features())
+    print(df.find_corr_features())
