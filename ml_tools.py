@@ -141,17 +141,6 @@ def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False)
     plt.show()
 
 
-def pairplot(df, figsize=(9, 9), savefig=False):
-    sns.set(style='whitegrid')
-    g = sns.PairGrid(df, diag_sharey=False, height=4)
-    g.fig.set_size_inches(figsize)
-    g.map_diag(sns.kdeplot, lw=2)
-    g.map_lower(sns.scatterplot, s=25, edgecolor="k", linewidth=0.5, alpha=0.4)
-    g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
-    plt.tight_layout()
-    if savefig: export2(plt, file_name='pair_plot', file_extension='png')
-
-
 class DataFrame(pd.DataFrame):
 
     def detect_outliers(self, method: str = '3sigma'):
@@ -175,7 +164,7 @@ class DataFrame(pd.DataFrame):
             outliers = pd.concat([outliers, col_outliers])
         return outliers
 
-    def find_drop_features(self, threshold: float = 0.9) -> list:
+    def find_drop_features(self, threshold: float = 0.85) -> list:
         com_m = self.corr().abs()
 
         # верхний треугольник матрицы корреляции без диагонали
@@ -186,6 +175,38 @@ class DataFrame(pd.DataFrame):
                    if any(threshold <= uptriangle[column]) or all(uptriangle[column].isna())]
 
         return to_drop
+
+    def corrplot(self, figsize=(12, 12), title='Correlation', fmt=3, savefig=False):
+        plt.figure(figsize=figsize)
+        plt.title(title, fontsize=16, fontweight='bold')
+        sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
+        if savefig: export2(plt, file_name=title, file_extension='png')
+
+    def pairplot(self, figsize=(9, 9), savefig=False):
+        sns.set(style='whitegrid')
+        g = sns.PairGrid(self, diag_sharey=False, height=4)
+        g.fig.set_size_inches(figsize)
+        g.map_diag(sns.kdeplot, lw=2)
+        g.map_lower(sns.scatterplot, s=25, edgecolor="k", linewidth=0.5, alpha=0.4)
+        g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
+        plt.tight_layout()
+        if savefig: export2(plt, file_name='pair_plot', file_extension='png')
+
+    def histplot(self, figsize=(9, 9), bins=40, savefig=False):
+        self.hist(figsize=figsize, bins=bins)
+        if savefig: export2(plt, file_name='histplot', file_extension='png')
+
+    def boxplot(self, figsize=(12, 9), scale=False, fill=True, grid=True, savefig=False):
+        plt.figure(figsize=figsize)
+        plt.grid(grid)
+        if not scale:
+            sns.boxplot(self, fill=fill)
+        else:
+            sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
+        if savefig: export2(plt, file_name='boxplot', file_extension='png')
+
+    def train_test_split(self, test_size, shuffle=True, random_state=0):
+        return train_test_split(self, test_size=test_size, shuffle=shuffle, random_state=random_state)
 
 
 class Model:
