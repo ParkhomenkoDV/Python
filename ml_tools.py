@@ -19,6 +19,8 @@ from sklearn.preprocessing import (Normalizer,
                                    StandardScaler, MinMaxScaler, MaxAbsScaler,
                                    RobustScaler, QuantileTransformer, PowerTransformer)
 
+from sklearn.inspection import permutation_importance
+
 from sklearn.model_selection import train_test_split
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
@@ -142,6 +144,13 @@ def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False)
 
 
 class DataFrame(pd.DataFrame):
+    """Расширенный класс pandas.DataFrame"""
+
+    def encode_one_hot(self, columns: list[str], inplace=False):
+        for column in columns:
+            dummies = pd.get_dummies(self[column], prefix=column)
+            self = pd.concat([self, dummies], axis=1, inplace=True)  # FIXME: self переопределен!
+        return self
 
     def detect_outliers(self, method: str = '3sigma'):
         assert_sms = 'Incorrect assert'
@@ -176,6 +185,33 @@ class DataFrame(pd.DataFrame):
 
         return to_drop
 
+    def L1_importance(self):
+        scaler, model = StandardScaler(), Lasso()
+
+        '''X_sc = StandardScaler().fit_transform(X)  # преобразование данных
+        lg_l, pred_l = [], []
+
+        list_l = list(2 ** np.linspace(-10, 10, 100))
+
+        # строим n-ое кол-во моделей Лассо, меняя коэффициент регуляризации, сохраняя модель и коэффициенты
+        for i in range(len(list_l)):
+            m_l = Lasso(alpha=list_l[i]).fit(X_sc, Y)
+            lg_l.append(m_l)
+            pred_l.append(m_l.coef_)
+
+        # рисуем отмасштабированные признаки на одном графике
+        plt.figure(figsize=(12, 9))
+        x_l = np.linspace(0, len(pred_l), len(pred_l))
+        for i in np.vstack(pred_l).T:
+            plt.plot(x_l, np.sign(i) * np.abs(i))
+
+        plt.ylim(-0.05, 0.2)
+        plt.legend(names)
+        plt.grid()'''
+
+    def L1_importance_plot(self):
+        pass
+
     def mutual_info_score(self, target: str) -> dict[str:float]:
         """Взаимная информация"""
         result = dict()
@@ -183,6 +219,15 @@ class DataFrame(pd.DataFrame):
             result[column] = mutual_info_score(self[column], self[target])
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
         return dict(result)
+
+    def permutation_importance(self, target: str):
+        """Перемешивающий подход"""
+        model = RandomForestClassifier()
+        try:
+            result = permutation_importance(model, self.drop([target], axis=1), self[target])
+            return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=True)
+        except Exception as e:
+            print(e)
 
     def feature_importances_(self, target: str):
         """Важные признаки для классификации"""
@@ -194,6 +239,7 @@ class DataFrame(pd.DataFrame):
             print(e)
 
     def corrplot(self, figsize=(12, 12), title='Correlation', fmt=3, savefig=False):
+        """Тепловая карта матрицы корреляции"""
         plt.figure(figsize=figsize)
         plt.title(title, fontsize=16, fontweight='bold')
         sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
