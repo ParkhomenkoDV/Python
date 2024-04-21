@@ -59,22 +59,6 @@ SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler,
 from tools import export2
 
 
-def get_one_hot(df, cols):
-    for col in cols:
-        dummies = pd.get_dummies(df[col], prefix=col)
-        df = pd.concat([df, dummies], axis=1)
-    return df
-
-
-def get_label(df, cols):
-    df = df.copy()
-    for col in cols:
-        le = LabelEncoder()
-        labels = le.fit_transform(df[col])
-        df[col] = labels
-    return df
-
-
 def get_count(df, cols):
     df = df.copy()
 
@@ -146,11 +130,28 @@ def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False)
 class DataFrame(pd.DataFrame):
     """Расширенный класс pandas.DataFrame"""
 
-    def encode_one_hot(self, columns: list[str], inplace=False):
+    def __init__(self, *args, **kwargs):
+        super(DataFrame, self).__init__(*args, **kwargs)
+
+    def validate_encoding(self):
+        pass
+
+    def encode_label(self, columns: list[str]):
+        """Преобразование n категорий в числа от 1 до n"""
+        df = DataFrame()
         for column in columns:
-            dummies = pd.get_dummies(self[column], prefix=column)
-            self = pd.concat([self, dummies], axis=1, inplace=True)  # FIXME: self переопределен!
-        return self
+            le = LabelEncoder()
+            labels = le.fit_transform(self[column])
+            df[column] = labels
+        return DataFrame(df)
+
+    def encode_one_hot(self, columns: list[str]):
+        ohe = OneHotEncoder(handle_unknown='ignore')
+        dummies = ohe.fit_transform(self[columns])
+        return DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
+
+    def encode_count(self):
+        pass
 
     def detect_outliers(self, method: str = '3sigma'):
         assert_sms = 'Incorrect assert'
@@ -237,6 +238,10 @@ class DataFrame(pd.DataFrame):
             return pd.Series(model.features_importances_, index=self.columns[:-1]).sort_values(ascending=True)
         except Exception as e:
             print(e)
+
+    def balance(self, column_name):
+        """Сбалансированность класса"""
+        return self.groupby(column_name).count()  # TODO: подумать
 
     def corrplot(self, figsize=(12, 12), title='Correlation', fmt=3, savefig=False):
         """Тепловая карта матрицы корреляции"""
@@ -449,6 +454,9 @@ class Model:
 
 if __name__ == '__main__':
     df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
+    df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
+                  "Thickness [m]", "Pressure level [db]"]
     print(df)
     print(df.detect_outliers())
     print(df.find_corr_features())
+    print(df.encode_one_hot(["Frequency [Hz]"]))
