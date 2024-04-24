@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, TargetEncoder, OrdinalEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, TargetEncoder
 
 from sklearn.preprocessing import (Normalizer,
                                    StandardScaler, MinMaxScaler, MaxAbsScaler,
@@ -63,10 +63,10 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
 
 from sklearn.metrics import confusion_matrix
 
-SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
-
 from decorators import ignore_warnings
 from tools import export2
+
+SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
 
 def img_show(img, title='image', figsize=(12, 12)):
@@ -131,9 +131,6 @@ class DataFrame(pd.DataFrame):
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
 
-    def validate_encoding(self):
-        pass
-
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
         df = DataFrame()
@@ -169,6 +166,22 @@ class DataFrame(pd.DataFrame):
             self.__init__(pd.concat([self, df], axis=1))
         else:
             return df
+
+    def encode_ordinal(self, columns: list[str], drop=False, inplace=False):
+        """Преобразование категориальных признаков в числовые признаки с учетом порядка или их весов"""
+        df = DataFrame()
+        for column in columns:
+            oe = OrdinalEncoder()
+            df[column + '_ordinal'] = DataFrame(oe.fit_transform(self[[column]]))
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
+
+    def encode_target(self):
+        """"""
+        te = TargetEncoder()
 
     def detect_outliers(self, method: str = '3sigma'):
         assert_sms = 'Incorrect assert'
@@ -271,8 +284,8 @@ class DataFrame(pd.DataFrame):
 
     def feature_importances_plot(self, target: str):
         s = self.feature_importances(target)
-        plt.xlabel('Features')
-        plt.bar(s.head().index, s.head())
+        plt.ylabel('Features')
+        plt.barh(s.head(), s.head().index)  # возможно нужно поменять местами
         plt.show()
 
     def balance(self, column_name):
