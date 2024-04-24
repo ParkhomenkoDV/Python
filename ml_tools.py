@@ -160,9 +160,15 @@ class DataFrame(pd.DataFrame):
             return df
 
     def encode_one_hot(self, columns: list[str], drop=False, inplace=False):
+        """Преобразование n значений каждой категории в n бинарных категорий"""
         ohe = OneHotEncoder(handle_unknown='ignore')
         dummies = ohe.fit_transform(self[columns])
-        return DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
+        df = DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
 
     def encode_count(self, inplace=False):
         pass
