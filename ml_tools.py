@@ -69,18 +69,6 @@ from decorators import ignore_warnings
 from tools import export2
 
 
-def get_count(df, cols):
-    df = df.copy()
-
-    for col in cols:
-        df[col] = df[col].astype('str')
-
-    ce = CountEncoder(handle_unknown=-1)
-    ce.fit(df[cols])
-    df[cols] = ce.transform(df[cols])
-    return df
-
-
 def img_show(img, title='image', figsize=(12, 12)):
     plt.figure(figsize=figsize)
     plt.imshow(img.numpy().astype("uint8"))
@@ -170,8 +158,17 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_count(self, inplace=False):
-        pass
+    def encode_count(self, columns: list[str], drop=False, inplace=False):
+        """Преобразование значений каждой категории в количество этих значений"""
+        df = DataFrame()
+        for column in columns:
+            column_count = self[column].value_counts().to_dict()
+            df[column + '_count'] = self[column].map(column_count)
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
 
     def detect_outliers(self, method: str = '3sigma'):
         assert_sms = 'Incorrect assert'
