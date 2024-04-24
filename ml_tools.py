@@ -21,7 +21,7 @@ from sklearn.preprocessing import (Normalizer,
 
 from sklearn.inspection import permutation_importance
 
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
                                   PassiveAggressiveClassifier)
@@ -35,6 +35,13 @@ from sklearn.neighbors import (NearestNeighbors, KNeighborsClassifier, KNeighbor
 from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
 from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
 from sklearn.tree import plot_tree
+
+from sklearn.covariance import EllipticEnvelope
+from sklearn.svm import OneClassSVM
+from sklearn.ensemble import IsolationForest
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import LocalOutlierFactor
+
 from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier,
                               GradientBoostingClassifier, AdaBoostClassifier, HistGradientBoostingClassifier,
                               StackingClassifier, VotingClassifier)
@@ -58,6 +65,7 @@ from sklearn.metrics import confusion_matrix
 
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
+from decorators import ignore_warnings
 from tools import export2
 
 
@@ -144,10 +152,14 @@ class DataFrame(pd.DataFrame):
         for column in columns:
             le = LabelEncoder()
             labels = le.fit_transform(self[column])
-            df[column] = labels
-        return DataFrame(df)
+            df[column + '_label'] = labels
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
 
-    def encode_one_hot(self, columns: list[str], inplace=False):
+    def encode_one_hot(self, columns: list[str], drop=False, inplace=False):
         ohe = OneHotEncoder(handle_unknown='ignore')
         dummies = ohe.fit_transform(self[columns])
         return DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
@@ -162,7 +174,7 @@ class DataFrame(pd.DataFrame):
         method = method.strip().lower()
         assert method in ('3sigma', 'tukey'), f'{assert_sms} method in ("3sigma", "Tukey")!'
 
-        outliers = pd.DataFrame()
+        outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
             if method == '3sigma':
                 mean = self[col].mean()
@@ -175,6 +187,14 @@ class DataFrame(pd.DataFrame):
             col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
             outliers = pd.concat([outliers, col_outliers])
         return DataFrame(outliers)
+
+    def outliers(self, nu: float = 0.1):
+        models = [OneClassSVM(nu=nu),  # nu - % выбросов
+                  IsolationForest(),
+                  EllipticEnvelope(contamination=0.2),
+                  LocalOutlierFactor(novelty=True)]
+        for i, model in enumerate(models):
+            model.fit(self)
 
     def find_corr_features(self, threshold: float = 0.85) -> list[str]:
         com_m = self.corr().abs()
@@ -192,27 +212,29 @@ class DataFrame(pd.DataFrame):
         """Линейные модели с разной L1-регуляризацией"""
         scaler = StandardScaler()  # скалирование обязательно! TODO: подуммать над уже предскалированием
         x_scaled = scaler.fit_transform(self.drop([y], axis=1))
-        return [Lasso(alpha=alpha).fit(x_scaled, self[y]) for alpha in tqdm(l1)]
+        return [Lasso(alpha=alpha).fit(x_scaled, self[y]) for alpha in tqdm(l1)]  # TODO: early_stoping
 
-    def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):
+    def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):  # TODO: threshold l1
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         l1_models = self.l1_models(y, l1)
         df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=self.drop([y], axis=1).columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
     def l1_importance_plot(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), **kwargs):
+        """Построение коэффициентов признаков линейных моделей с L1-регуляризацией"""
         df = self.l1_importance(y, l1)
-        l1 = df.pop('L1')
+        x = df.pop('L1')
 
         plt.figure(figsize=kwargs.get('figsize', (12, 9)))
         plt.grid(kwargs.get('grid', True))
         for column in df.columns:
-            plt.plot(l1, df[column])
+            plt.plot(x, df[column])
         plt.legend(df.columns)
         plt.xlabel('L1', fontsize=14)
         plt.xlim([0, l1[-1]])
         plt.show()
 
+    @ignore_warnings
     def mutual_info_score(self, target: str) -> dict[str:float]:
         """Взаимная информация"""
         result = dict()
@@ -225,10 +247,15 @@ class DataFrame(pd.DataFrame):
         """Перемешивающий подход"""
         model = RandomForestClassifier()
         try:
+            model.fit(self.drop([target], axis=1), self[target])
             result = permutation_importance(model, self.drop([target], axis=1), self[target])
             return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=True)
         except Exception as e:
             print(e)
+
+    def permutation_importance_plot(self, target: str):
+        s = self.permutation_importance(target)
+        plt.show()
 
     def feature_importances(self, target: str):
         """Важные признаки для классификации"""
@@ -238,6 +265,12 @@ class DataFrame(pd.DataFrame):
             return pd.Series(model.features_importances_, index=self.columns[:-1]).sort_values(ascending=True)
         except Exception as e:
             print(e)
+
+    def feature_importances_plot(self, target: str):
+        s = self.feature_importances(target)
+        plt.xlabel('Features')
+        plt.bar(s.head().index, s.head())
+        plt.show()
 
     def balance(self, column_name):
         """Сбалансированность класса"""
@@ -275,6 +308,8 @@ class DataFrame(pd.DataFrame):
         if savefig: export2(plt, file_name='boxplot', file_extension='png')
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
+        """Разделение DataFrame на тренировочный и тестовый"""
+        # stratify не нужен в виду разбиение одного датафрейма self
         return train_test_split(self, test_size=test_size, shuffle=shuffle, random_state=random_state)
 
 
@@ -459,11 +494,26 @@ class Model:
 
 
 class Bagging:
-    pass
+
+    # TODO: доделать
+    def __init__(self, model, n_estimators, max_samples, max_features, random_state=42):
+        self.bagging = BaggingClassifier() if 'cla' in type(model).__name__.lower() else BaggingRegressor()
+
+        self.model = model
+        self.n_estimators = n_estimators,
+        self.max_samples = max_samples,
+        self.max_features = max_features,
+        self.random_state = random_state
+
+    def fit(self, x, y):
+        self.bagging.fit(x, y)
 
 
 class Stacking:
-    pass
+
+    # TODO: доделать
+    def __init__(self):
+        self.stacking = StackingClassifier() if 'cla' in type(model).__name__.lower() else StackingRegressor()
 
 
 class Boosting:
