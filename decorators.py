@@ -1,6 +1,7 @@
 from functools import wraps, lru_cache, singledispatch
 from deprecated import deprecated
-from memory_profiler import profile
+import warnings
+# from memory_profiler import profile
 from dataclasses import dataclass
 import time
 from colorama import Fore
@@ -41,9 +42,22 @@ def logger(function):
     def wrapper(*args, **kwargs):
         """wrapper documentation"""
         print(f"----- {function.__name__}: start -----")
-        output = function(*args, **kwargs)
+        result = function(*args, **kwargs)
         print(f"----- {function.__name__}: end -----")
-        return output
+        return result
+
+    return wrapper
+
+
+def ignore_warnings(function):
+    """Игнорирование предупреждений"""
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        warnings.filterwarnings('ignore')
+        result = function(*args, **kwargs)
+        warnings.filterwarnings('default')
+        return result
 
     return wrapper
 
@@ -73,7 +87,7 @@ def memory_usage_psutil():
     return mem_info.rss / 1024 / 1024  # возвращаем используемую память в МБ
 
 
-@profile
+'''@profile
 def memory_usage(func):
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
@@ -81,7 +95,7 @@ def memory_usage(func):
         print(f"Использованная память: {mem_usage} MB")
         return result
 
-    return wrapper
+    return wrapper'''
 
 
 def cache(function):
