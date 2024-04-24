@@ -21,7 +21,7 @@ from sklearn.preprocessing import (Normalizer,
 
 from sklearn.inspection import permutation_importance
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
                                   PassiveAggressiveClassifier)
@@ -53,6 +53,8 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
                              cohen_kappa_score, d2_pinball_score, mutual_info_score, adjusted_mutual_info_score,
                              average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
                              top_k_accuracy_score, calinski_harabasz_score)
+
+from sklearn.metrics import confusion_matrix
 
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
@@ -136,7 +138,7 @@ class DataFrame(pd.DataFrame):
     def validate_encoding(self):
         pass
 
-    def encode_label(self, columns: list[str]):
+    def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
         df = DataFrame()
         for column in columns:
@@ -145,12 +147,12 @@ class DataFrame(pd.DataFrame):
             df[column] = labels
         return DataFrame(df)
 
-    def encode_one_hot(self, columns: list[str]):
+    def encode_one_hot(self, columns: list[str], inplace=False):
         ohe = OneHotEncoder(handle_unknown='ignore')
         dummies = ohe.fit_transform(self[columns])
         return DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
 
-    def encode_count(self):
+    def encode_count(self, inplace=False):
         pass
 
     def detect_outliers(self, method: str = '3sigma'):
@@ -186,32 +188,30 @@ class DataFrame(pd.DataFrame):
 
         return to_drop
 
-    def L1_importance(self):
-        scaler, model = StandardScaler(), Lasso()
+    def l1_models(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):
+        """Линейные модели с разной L1-регуляризацией"""
+        scaler = StandardScaler()  # скалирование обязательно! TODO: подуммать над уже предскалированием
+        x_scaled = scaler.fit_transform(self.drop([y], axis=1))
+        return [Lasso(alpha=alpha).fit(x_scaled, self[y]) for alpha in tqdm(l1)]
 
-        '''X_sc = StandardScaler().fit_transform(X)  # преобразование данных
-        lg_l, pred_l = [], []
+    def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):
+        """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
+        l1_models = self.l1_models(y, l1)
+        df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=self.drop([y], axis=1).columns)
+        return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
-        list_l = list(2 ** np.linspace(-10, 10, 100))
+    def l1_importance_plot(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), **kwargs):
+        df = self.l1_importance(y, l1)
+        l1 = df.pop('L1')
 
-        # строим n-ое кол-во моделей Лассо, меняя коэффициент регуляризации, сохраняя модель и коэффициенты
-        for i in range(len(list_l)):
-            m_l = Lasso(alpha=list_l[i]).fit(X_sc, Y)
-            lg_l.append(m_l)
-            pred_l.append(m_l.coef_)
-
-        # рисуем отмасштабированные признаки на одном графике
-        plt.figure(figsize=(12, 9))
-        x_l = np.linspace(0, len(pred_l), len(pred_l))
-        for i in np.vstack(pred_l).T:
-            plt.plot(x_l, np.sign(i) * np.abs(i))
-
-        plt.ylim(-0.05, 0.2)
-        plt.legend(names)
-        plt.grid()'''
-
-    def L1_importance_plot(self):
-        pass
+        plt.figure(figsize=kwargs.get('figsize', (12, 9)))
+        plt.grid(kwargs.get('grid', True))
+        for column in df.columns:
+            plt.plot(l1, df[column])
+        plt.legend(df.columns)
+        plt.xlabel('L1', fontsize=14)
+        plt.xlim([0, l1[-1]])
+        plt.show()
 
     def mutual_info_score(self, target: str) -> dict[str:float]:
         """Взаимная информация"""
@@ -230,7 +230,7 @@ class DataFrame(pd.DataFrame):
         except Exception as e:
             print(e)
 
-    def feature_importances_(self, target: str):
+    def feature_importances(self, target: str):
         """Важные признаки для классификации"""
         model = RandomForestClassifier()
         try:
@@ -444,12 +444,30 @@ class Model:
                 if exceptions: print(e)
         return scores
 
+    def confusion_matrix(self, y_true, y_predicted):
+        return confusion_matrix(y_true, y_predicted)
+
+    def plot_confusion_matrix(self):
+        pass
+
     def save(self, path: str) -> None:
         pickle.dump(self.__model, open(path, 'wb'))
 
     def load(self, path: str):
         self.__model = pickle.load(open(path, 'rb'))
         return self
+
+
+class Bagging:
+    pass
+
+
+class Stacking:
+    pass
+
+
+class Boosting:
+    pass
 
 
 if __name__ == '__main__':
