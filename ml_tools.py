@@ -241,10 +241,11 @@ class DataFrame(pd.DataFrame):
         except Exception as e:
             print(e)
 
-    def permutation_importance_plot(self, target: str):  # TODO: доделать!
+    def permutation_importance_plot(self, target: str):
         s = self.permutation_importance(target)
-        plt.ylabel('Features')
-        plt.barh(s.head(), s.head().index)  # возможно нужно поменять местами
+        plt.xlabel('importance')
+        plt.ylabel('features')
+        plt.bar(s.head(), s.head().index)  # возможно нужно поменять местами
         plt.show()
 
     def feature_importances(self, target: str):
@@ -258,8 +259,9 @@ class DataFrame(pd.DataFrame):
 
     def feature_importances_plot(self, target: str):
         s = self.feature_importances(target)
-        plt.ylabel('Features')
-        plt.barh(s.head(), s.head().index)  # возможно нужно поменять местами
+        plt.xlabel('importance')
+        plt.ylabel('features')
+        plt.bar(s.head(), s.head().index)
         plt.show()
 
     def balance(self, column_name):
