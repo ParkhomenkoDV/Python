@@ -152,6 +152,7 @@ class DataFrame(pd.DataFrame):
 
         outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
+            lower_bound, upper_bound = -np.inf, np.inf
             if method == '3sigma':
                 mean = self[col].mean()
                 std = self[col].std()
@@ -236,12 +237,14 @@ class DataFrame(pd.DataFrame):
         try:
             model.fit(self.drop([target], axis=1), self[target])
             result = permutation_importance(model, self.drop([target], axis=1), self[target])
-            return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=True)
+            return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
         except Exception as e:
             print(e)
 
     def permutation_importance_plot(self, target: str):  # TODO: доделать!
         s = self.permutation_importance(target)
+        plt.ylabel('Features')
+        plt.barh(s.head(), s.head().index)  # возможно нужно поменять местами
         plt.show()
 
     def feature_importances(self, target: str):
@@ -249,7 +252,7 @@ class DataFrame(pd.DataFrame):
         model = RandomForestClassifier()
         try:
             model.fit(self.drop([target], axis=1), self[target])
-            return pd.Series(model.features_importances_, index=self.columns[:-1]).sort_values(ascending=True)
+            return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
         except Exception as e:
             print(e)
 
