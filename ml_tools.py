@@ -242,10 +242,12 @@ class DataFrame(pd.DataFrame):
             print(e)
 
     def permutation_importance_plot(self, target: str):
-        s = self.permutation_importance(target)
+        """Перемешивающий подход на столбчатой диаграмме"""
+        s = self.permutation_importance(target).sort_values(ascending=True)
+        if not s: return
         plt.xlabel('importance')
         plt.ylabel('features')
-        plt.bar(s.head(), s.head().index)  # возможно нужно поменять местами
+        plt.barh(s.index, s)
         plt.show()
 
     def feature_importances(self, target: str):
@@ -258,10 +260,12 @@ class DataFrame(pd.DataFrame):
             print(e)
 
     def feature_importances_plot(self, target: str):
-        s = self.feature_importances(target)
+        """Важные признаки для классификации на столбчатой диаграмме"""
+        s = self.feature_importances(target).sort_values(ascending=True)
+        if not s: return
         plt.xlabel('importance')
         plt.ylabel('features')
-        plt.bar(s.head(), s.head().index)
+        plt.barh(s.index, s)
         plt.show()
 
     def balance(self, column_name):
