@@ -278,12 +278,12 @@ class DataFrame(pd.DataFrame):
         """Сбалансированность класса"""
         return self.groupby(column_name).count()  # TODO: подумать
 
-    def corrplot(self, title='Correlation', fmt=3, **kwargs):
+    def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
-        plt.title(title, fontsize=16, fontweight='bold')
+        plt.title(file_name=kwargs.get('title', 'corrplot'), fontsize=16, fontweight='bold')
         sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
-        if kwargs.get('savefig', False): export2(plt, file_name=title, file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'corrplot'), file_extension='png')
 
     def pairplot(self, **kwargs):
         sns.set(style='whitegrid')
@@ -293,21 +293,21 @@ class DataFrame(pd.DataFrame):
         g.map_lower(sns.scatterplot, s=25, edgecolor="k", linewidth=0.5, alpha=0.4)
         g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
         plt.tight_layout()
-        if kwargs.get('savefig', False): export2(plt, file_name='pair_plot', file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'pairplot'), file_extension='png')
 
     def histplot(self, bins=40, **kwargs):
-        self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins)
-        if kwargs.get('savefig', False): export2(plt, file_name='histplot', file_extension='png')
+        self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins, title=kwargs.get('title', 'histplot'))
+        if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'histplot'), file_extension='png')
 
-    def boxplot(self, title='boxplot', scale=False, fill=True, grid=True, **kwargs):
+    def boxplot(self, scale=False, fill=True, **kwargs):
         plt.figure(figsize=kwargs.get('figsize', (12, 9)))
-        plt.title(title, fontsize=16, fontweight='bold')
-        plt.grid(grid)
+        plt.title(kwargs.get('title', 'boxplot'), fontsize=16, fontweight='bold')
+        plt.grid(kwargs.get('grid', True))
         if not scale:
             sns.boxplot(self, fill=fill)
         else:
             sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
-        if kwargs.get('savefig', False): export2(plt, file_name='boxplot', file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'boxplot'), file_extension='png')
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
         """Разделение DataFrame на тренировочный и тестовый"""
@@ -494,27 +494,30 @@ class Model:
         cmd.plot()
         plt.show()
 
-    def precision_recall_curve(self, y_true, y_predicted, title='precision recall curve', **kwargs):
+    def precision_recall_curve(self, y_true, y_predicted, **kwargs):
         """График PR"""
         precision, recall, threshold = precision_recall_curve(y_true, y_predicted)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
-        plt.title(title, fontsize=16, fontweight='bold')
+        plt.title(kwargs.get('title', 'precision recall curve'), fontsize=16, fontweight='bold')
         plt.plot(precision, recall, color='blue', label='PR')
         plt.grid(True)
         plt.xlabel('precision', fontsize=14)
         plt.ylabel('recall', fontsize=14)
+        if kwargs.get('savefig', False):
+            export2(plt, file_name=kwargs.get('title', 'precision recall curve'), file_extension='png')
         plt.show()
 
-    def roc_curve(self, y_true, y_predicted, title='roc curve', **kwargs):
+    def roc_curve(self, y_true, y_predicted, **kwargs):
         """График ROC"""
         fpr, tpr, threshold = roc_curve(y_true, y_predicted)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
-        plt.title(title, fontsize=16, fontweight='bold')
+        plt.title(kwargs.get('title', 'roc curve'), fontsize=16, fontweight='bold')
         plt.plot(fpr, tpr, color='blue', label='ROC')
         plt.plot([0, 1], [0, 1], color='red')
         plt.grid(True)
         plt.xlabel('fpr', fontsize=14)
         plt.plot('tpr', fontsize=14)
+        if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'roc curve'), file_extension='png')
         plt.show()
 
     def save(self, path: str) -> None:
