@@ -61,7 +61,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
                              average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
                              top_k_accuracy_score, calinski_harabasz_score)
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 from decorators import ignore_warnings
 from tools import isiter, export2
@@ -482,10 +482,17 @@ class Model:
         return scores
 
     def confusion_matrix(self, y_true, y_predicted):
-        return confusion_matrix(y_true, y_predicted)
+        """Матрица путаницы"""
+        return confusion_matrix(y_true, y_predicted, labels=self.__model.classes_)
 
-    def plot_confusion_matrix(self):
-        pass
+    def confusion_matrix_plot(self, y_true, y_predicted, title='confusion_matrix', **kwargs):
+        """График матрицы путаницы"""
+        cm = self.confusion_matrix(y_true, y_predicted)
+        cmd = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.__model.classes_)
+        #plt.figure(figsize=kwargs.get('figsize', (12, 12)))
+        #plt.title(title, fontsize=16, fontweight='bold')
+        cmd.plot()
+        plt.show()
 
     def save(self, path: str) -> None:
         pickle.dump(self.__model, open(path, 'wb'))
