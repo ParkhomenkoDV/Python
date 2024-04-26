@@ -61,7 +61,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
                              average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
                              top_k_accuracy_score, calinski_harabasz_score)
 
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve, roc_curve
 
 from decorators import ignore_warnings
 from tools import isiter, export2
@@ -426,7 +426,7 @@ class Model:
 
         fg.add_subplot(gs[0, 1])
         plt.grid(True)
-        plt.scatter(y_true, y_possible, c='red')
+        plt.scatter(y_true, y_possible, color='red')
         plt.plot(y_true, y_true, color='blue')
 
         if savefig: export2(plt, file_name=suptitle, file_extension='png')
@@ -489,9 +489,32 @@ class Model:
         """График матрицы путаницы"""
         cm = self.confusion_matrix(y_true, y_predicted)
         cmd = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.__model.classes_)
-        #plt.figure(figsize=kwargs.get('figsize', (12, 12)))
-        #plt.title(title, fontsize=16, fontweight='bold')
+        # plt.figure(figsize=kwargs.get('figsize', (12, 12)))
+        # plt.title(title, fontsize=16, fontweight='bold')
         cmd.plot()
+        plt.show()
+
+    def precision_recall_curve(self, y_true, y_predicted, title='precision recall curve', **kwargs):
+        """График PR"""
+        precision, recall, threshold = precision_recall_curve(y_true, y_predicted)
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.plot(precision, recall, color='blue', label='PR')
+        plt.grid(True)
+        plt.xlabel('precision', fontsize=14)
+        plt.ylabel('recall', fontsize=14)
+        plt.show()
+
+    def roc_curve(self, y_true, y_predicted, title='roc curve', **kwargs):
+        """График ROC"""
+        fpr, tpr, threshold = roc_curve(y_true, y_predicted)
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.plot(fpr, tpr, color='blue', label='ROC')
+        plt.plot([0, 1], [0, 1], color='red')
+        plt.grid(True)
+        plt.xlabel('fpr', fontsize=14)
+        plt.plot('tpr', fontsize=14)
         plt.show()
 
     def save(self, path: str) -> None:
