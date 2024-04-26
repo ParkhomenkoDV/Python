@@ -165,7 +165,7 @@ class DataFrame(pd.DataFrame):
             outliers = pd.concat([outliers, col_outliers])
         return DataFrame(outliers)
 
-    def outliers(self, nu: float = 0.1):
+    def outliers(self, nu: float = 0.1):  # TODO: доделать
         models = [OneClassSVM(nu=nu),  # nu - % выбросов
                   IsolationForest(),
                   EllipticEnvelope(contamination=0.2),
@@ -241,10 +241,13 @@ class DataFrame(pd.DataFrame):
         except Exception as e:
             print(e)
 
-    def permutation_importance_plot(self, target: str):
+    def permutation_importance_plot(self, target: str, **kwargs):
         """Перемешивающий подход на столбчатой диаграмме"""
-        s = self.permutation_importance(target).sort_values(ascending=True)
-        if not s: return
+        try:
+            s = self.permutation_importance(target).sort_values(ascending=True)
+        except:
+            return
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(s.index, s)
@@ -259,10 +262,13 @@ class DataFrame(pd.DataFrame):
         except Exception as e:
             print(e)
 
-    def feature_importances_plot(self, target: str):
+    def feature_importances_plot(self, target: str, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
-        s = self.feature_importances(target).sort_values(ascending=True)
-        if not s: return
+        try:
+            s = self.feature_importances(target).sort_values(ascending=True)
+        except:
+            return
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(s.index, s)
