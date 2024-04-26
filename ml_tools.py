@@ -64,7 +64,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
 from sklearn.metrics import confusion_matrix
 
 from decorators import ignore_warnings
-from tools import export2
+from tools import isiter, export2
 
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
@@ -74,54 +74,6 @@ def img_show(img, title='image', figsize=(12, 12)):
     plt.imshow(img.numpy().astype("uint8"))
     plt.title(title)
     plt.axis("off")
-    plt.show()
-
-
-def training_plot(history, figsize=(12, 9), savefig=False):
-    num_metrics = len(history.history.keys()) // 2
-
-    fg = plt.figure(figsize=figsize)  # размер в дюймах
-    gs = fg.add_gridspec(1, num_metrics)  # строки, столбцы
-    fg.suptitle('Training and Validation', fontsize=16, fontweight='bold')
-
-    for i in range(num_metrics):
-        metric_name = list(history.history.keys())[i]
-        val_metric_name = list(history.history.keys())[i + num_metrics]
-
-        fg.add_subplot(gs[0, i])  # позиция графика
-        plt.grid(True)  # сетка
-        plt.plot(history.history[metric_name], color='blue', label=metric_name)
-        plt.plot(history.history[val_metric_name], color='red', label=val_metric_name)
-        plt.xlabel('Epoch', fontsize=12)
-        plt.ylabel('Error', fontsize=12)
-        plt.xlim(0, max(history.epoch))
-        plt.ylim(0, 2 * np.mean([history.history[metric_name][-1], history.history[val_metric_name][-1]]))
-        plt.legend()
-    if savefig: export2(plt, file_name='training_plot', file_extension='png')
-    plt.show()
-
-
-def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False):
-    fg = plt.figure(figsize=figsize)
-    gs = fg.add_gridspec(1, 2)
-    fg.suptitle('Predictions', fontsize=16, fontweight='bold')
-
-    fg.add_subplot(gs[0, 0])
-    plt.grid(True)
-    plt.hist(y_predict - y_true, bins=bins)
-    plt.xlabel('Predictions Error', fontsize=12)
-    plt.ylabel('Count', fontsize=12)
-
-    fg.add_subplot(gs[0, 1])
-    plt.grid(True)
-    plt.scatter(y_true, y_predict, color='blue')
-    lims = (min(*y_true, *y_predict), max(*y_true, *y_predict))
-    plt.xlim(lims)
-    plt.ylim(lims)
-    plt.plot(lims, lims, color='red')
-    plt.xlabel('True values', fontsize=12)
-    plt.ylabel('Predictions', fontsize=12)
-    if savefig: export2(plt, file_name='predictions_plot', file_extension='png')
     plt.show()
 
 
@@ -179,9 +131,17 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_target(self):
+    def encode_target(self, columns: list[str], drop=False, inplace=False):
         """"""
-        te = TargetEncoder()
+        df = DataFrame()
+        for column in columns:
+            te = TargetEncoder()
+            df[column + '_target'] = DataFrame(te.fit_transform(X=df.nom_0, y=df.Target))
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
 
     def detect_outliers(self, method: str = '3sigma'):
         assert_sms = 'Incorrect assert'
@@ -224,29 +184,40 @@ class DataFrame(pd.DataFrame):
 
         return to_drop
 
-    def l1_models(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):
+    def l1_models(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False) -> list:
         """Линейные модели с разной L1-регуляризацией"""
-        scaler = StandardScaler()  # скалирование обязательно! TODO: подуммать над уже предскалированием
-        x_scaled = scaler.fit_transform(self.drop([y], axis=1))
-        return [Lasso(alpha=alpha).fit(x_scaled, self[y]) for alpha in tqdm(l1)]  # TODO: early_stoping
+        assert_sms = 'Incorrect assert:'
+        assert type(y) is str, f'{assert_sms} type(y) is str'
+        assert isiter(l1), f'{assert_sms} isiter(l1)'
 
-    def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100))):  # TODO: threshold l1
+        x = StandardScaler().fit_transform(self.drop([y], axis=1)) if scale else self.drop([y], axis=1)
+        result = list()
+        for alpha in tqdm(l1, desc='Fitting L1-models'):
+            model = Lasso(alpha=alpha).fit(x, self[y])
+            result.append(model)
+            if early_stopping and all(map(lambda c: c == 0, model.coef_)): break
+        return result
+
+    def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False):
+        # TODO: threshold l1
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
-        l1_models = self.l1_models(y, l1)
+        l1_models = self.l1_models(y, l1=l1, scale=scale, early_stopping=early_stopping)
         df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=self.drop([y], axis=1).columns)
-        return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
+        return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))  # .fillna(0.0)
 
-    def l1_importance_plot(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), **kwargs):
+    def l1_importance_plot(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
+                           **kwargs):
         """Построение коэффициентов признаков линейных моделей с L1-регуляризацией"""
-        df = self.l1_importance(y, l1)
+        df = self.l1_importance(y, l1=l1, scale=scale, early_stopping=early_stopping)
         x = df.pop('L1')
 
         plt.figure(figsize=kwargs.get('figsize', (12, 9)))
         plt.grid(kwargs.get('grid', True))
         for column in df.columns:
             plt.plot(x, df[column])
-        plt.legend(df.columns)
+        plt.legend(df.columns, fontsize=12)
         plt.xlabel('L1', fontsize=14)
+        plt.ylabel('coef', fontsize=14)
         plt.xlim([0, l1[-1]])
         plt.show()
 
@@ -269,7 +240,7 @@ class DataFrame(pd.DataFrame):
         except Exception as e:
             print(e)
 
-    def permutation_importance_plot(self, target: str):
+    def permutation_importance_plot(self, target: str):  # TODO: доделать!
         s = self.permutation_importance(target)
         plt.show()
 
@@ -292,36 +263,36 @@ class DataFrame(pd.DataFrame):
         """Сбалансированность класса"""
         return self.groupby(column_name).count()  # TODO: подумать
 
-    def corrplot(self, figsize=(12, 12), title='Correlation', fmt=3, savefig=False):
+    def corrplot(self, title='Correlation', fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
-        plt.figure(figsize=figsize)
+        plt.figure(figsize=kwargs.get('figsize', (12, 12)))
         plt.title(title, fontsize=16, fontweight='bold')
         sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
-        if savefig: export2(plt, file_name=title, file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name=title, file_extension='png')
 
-    def pairplot(self, figsize=(9, 9), savefig=False):
+    def pairplot(self, **kwargs):
         sns.set(style='whitegrid')
         g = sns.PairGrid(self, diag_sharey=False, height=4)
-        g.fig.set_size_inches(figsize)
+        g.fig.set_size_inches(kwargs.get('figsize', (12, 12)))
         g.map_diag(sns.kdeplot, lw=2)
         g.map_lower(sns.scatterplot, s=25, edgecolor="k", linewidth=0.5, alpha=0.4)
         g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
         plt.tight_layout()
-        if savefig: export2(plt, file_name='pair_plot', file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name='pair_plot', file_extension='png')
 
-    def histplot(self, figsize=(9, 9), bins=40, savefig=False):
-        self.hist(figsize=figsize, bins=bins)
-        if savefig: export2(plt, file_name='histplot', file_extension='png')
+    def histplot(self, bins=40, **kwargs):
+        self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins)
+        if kwargs.get('savefig', False): export2(plt, file_name='histplot', file_extension='png')
 
-    def boxplot(self, figsize=(12, 9), title='boxplot', scale=False, fill=True, grid=True, savefig=False):
-        plt.figure(figsize=figsize)
+    def boxplot(self, title='boxplot', scale=False, fill=True, grid=True, **kwargs):
+        plt.figure(figsize=kwargs.get('figsize', (12, 9)))
         plt.title(title, fontsize=16, fontweight='bold')
         plt.grid(grid)
         if not scale:
             sns.boxplot(self, fill=fill)
         else:
             sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
-        if savefig: export2(plt, file_name='boxplot', file_extension='png')
+        if kwargs.get('savefig', False): export2(plt, file_name='boxplot', file_extension='png')
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
         """Разделение DataFrame на тренировочный и тестовый"""
@@ -509,11 +480,23 @@ class Model:
         return self
 
 
+def classifier_or_regressor(model) -> str:
+    if 'cla' in (type(model).__name__.lower(), model.__name__.lower()): return 'cla'
+    if 'reg' in (type(model).__name__.lower(), model.__name__.lower()): return 'reg'
+    return ''
+
+
 class Bagging:
 
     # TODO: доделать
     def __init__(self, model, n_estimators, max_samples, max_features, random_state=42):
-        self.bagging = BaggingClassifier() if 'cla' in type(model).__name__.lower() else BaggingRegressor()
+        bagging_type = classifier_or_regressor(model)
+        if bagging_type == 'cla':
+            self.bagging = BaggingClassifier()
+        elif bagging_type == 'reg':
+            self.bagging = BaggingRegressor()
+        else:
+            raise '!!!'
 
         self.model = model
         self.n_estimators = n_estimators,
@@ -528,12 +511,15 @@ class Bagging:
 class Stacking:
 
     # TODO: доделать
-    def __init__(self):
+    def __init__(self, model):
         self.stacking = StackingClassifier() if 'cla' in type(model).__name__.lower() else StackingRegressor()
 
 
 class Boosting:
-    pass
+
+    # TODO: доделать
+    def __init__(self):
+        pass
 
 
 if __name__ == '__main__':
