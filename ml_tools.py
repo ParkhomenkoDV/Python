@@ -281,7 +281,7 @@ class DataFrame(pd.DataFrame):
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
-        plt.title(file_name=kwargs.get('title', 'corrplot'), fontsize=16, fontweight='bold')
+        plt.title(kwargs.get('title', 'corrplot'), fontsize=16, fontweight='bold')
         sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'corrplot'), file_extension='png')
 
@@ -296,7 +296,7 @@ class DataFrame(pd.DataFrame):
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'pairplot'), file_extension='png')
 
     def histplot(self, bins=40, **kwargs):
-        self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins, title=kwargs.get('title', 'histplot'))
+        self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins)
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'histplot'), file_extension='png')
 
     def boxplot(self, scale=False, fill=True, **kwargs):
@@ -500,6 +500,8 @@ class Model:
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.title(kwargs.get('title', 'precision recall curve'), fontsize=16, fontweight='bold')
         plt.plot(precision, recall, color='blue', label='PR')
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
         plt.grid(True)
         plt.xlabel('precision', fontsize=14)
         plt.ylabel('recall', fontsize=14)
@@ -514,9 +516,11 @@ class Model:
         plt.title(kwargs.get('title', 'roc curve'), fontsize=16, fontweight='bold')
         plt.plot(fpr, tpr, color='blue', label='ROC')
         plt.plot([0, 1], [0, 1], color='red')
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
         plt.grid(True)
         plt.xlabel('fpr', fontsize=14)
-        plt.plot('tpr', fontsize=14)
+        plt.ylabel('tpr', fontsize=14)
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'roc curve'), file_extension='png')
         plt.show()
 
