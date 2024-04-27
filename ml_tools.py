@@ -274,9 +274,16 @@ class DataFrame(pd.DataFrame):
         plt.barh(s.index, s)
         plt.show()
 
-    def balance(self, column_name):
+    def balance(self, column_name: str):
         """Сбалансированность класса"""
-        return self.groupby(column_name).count()  # TODO: подумать
+        assert_sms = 'Incorrect assert:'
+        assert column_name in self.columns, f'{assert_sms} column_name in self.columns'
+
+        len_unique = len(self[column_name].unique())
+        df = self.value_counts(column_name).to_frame()
+        df['fraction'] = df['count'] / len(self)
+        df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
+        return DataFrame(df)
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
