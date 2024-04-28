@@ -1,7 +1,7 @@
 from functools import wraps, lru_cache, singledispatch
 from deprecated import deprecated
 import warnings
-# from memory_profiler import profile
+from memory_profiler import profile as memit  # готовый декоратор для замера использования памяти
 from dataclasses import dataclass
 import time
 from colorama import Fore
@@ -78,24 +78,6 @@ def timeit(rnd=4):
         return wrapper
 
     return decorate
-
-
-def memory_usage_psutil():
-    import psutil
-    process = psutil.Process()
-    mem_info = process.memory_info()
-    return mem_info.rss / 1024 / 1024  # возвращаем используемую память в МБ
-
-
-'''@profile
-def memory_usage(func):
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        mem_usage = memory_usage_psutil()
-        print(f"Использованная память: {mem_usage} MB")
-        return result
-
-    return wrapper'''
 
 
 def cache(function):
