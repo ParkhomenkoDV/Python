@@ -122,9 +122,12 @@ class DataFrame(pd.DataFrame):
         assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
         return target
 
-    def impute(self):  # TODO: доделать
+    def impute(self, inplace=False):  # TODO: доделать
         """Замена локальных пропусков"""
-        pass
+        if inplace:
+            self.__init__()
+        else:
+            return
 
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
@@ -293,7 +296,7 @@ class DataFrame(pd.DataFrame):
         return l1_features
 
     @decorators.ignore_warnings
-    def mutual_info_score(self, **kwargs) -> dict[str:float]:
+    def mutual_info_score(self, **kwargs):
         """Взаимная информация корреляции"""
         target = self.__get_target(**kwargs)
 
@@ -301,17 +304,20 @@ class DataFrame(pd.DataFrame):
         for column in self.drop([target], axis=1):
             result[column] = mutual_info_score(self[column], self[target])
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
-        return dict(result)
+        return pd.Series(dict(result))
 
     def mutual_info_score_plot(self, **kwargs):
         """График взаимной информации корреляции"""
-        mutual_info_score = pd.Series(self.mutual_info_score(**kwargs)).sort_values(ascending=True)
+        mutual_info_score = self.mutual_info_score(**kwargs).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('mutual info score')
         plt.ylabel('features')
         plt.barh(mutual_info_score.index, mutual_info_score)
         plt.show()
+
+    def select_mutual_info_score_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
+        mutual_info_score_features = self.mutual_info_score
 
     @decorators.try_except('pass')
     def permutation_importance(self, **kwargs):
@@ -323,20 +329,22 @@ class DataFrame(pd.DataFrame):
         result = permutation_importance(model, self.drop([target], axis=1), self[target])
         return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
 
-    @decorators.try_except('pass')
     def permutation_importance_plot(self, **kwargs):
         """Перемешивающий подход на столбчатой диаграмме"""
         target = self.__get_target(**kwargs)
 
-        s = self.permutation_importance(target).sort_values(ascending=True)
+        s = self.permutation_importance(target=target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(s.index, s)
         plt.show()
 
+    def select_permutation_importance_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
+        permutation_importance_features = self.permutation_importance
+
     @decorators.try_except('pass')
-    def feature_importances(self, **kwargs):
+    def importance_features(self, **kwargs):
         """Важные признаки для классификации"""
         target = self.__get_target(**kwargs)
 
@@ -345,16 +353,19 @@ class DataFrame(pd.DataFrame):
         return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
 
     @decorators.try_except('pass')
-    def feature_importances_plot(self, **kwargs):
+    def importance_features_plot(self, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
         target = self.__get_target(**kwargs)
 
-        s = self.feature_importances(target=target).sort_values(ascending=True)
+        s = self.importance_features(target=target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(s.index, s)
         plt.show()
+
+    def select_importance_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
+        importance_features = self.importance_features
 
     def __select_metric(self, metric: str):
         """Вспомогательная функция к выбору метрики"""
@@ -371,7 +382,7 @@ class DataFrame(pd.DataFrame):
         if metric == 'f_regression': return f_regression
         if metric == 'mutual_info_regression': return mutual_info_regression
 
-    def select_k_best(self, metric: str, k: int, inplace=False, test_size=0.25, **kwargs):
+    def select_k_best_features(self, metric: str, k: int, inplace=False, test_size=0.25, **kwargs):
         """Выбор k лучших признаков"""
         target = self.__get_target(**kwargs)
 
@@ -393,7 +404,7 @@ class DataFrame(pd.DataFrame):
         else:
             return x.columns[skb.get_support()]
 
-    def select_percentile(self, metric: str, percentile: int | float, inplace=False, test_size=0.25, **kwargs):
+    def select_percentile_features(self, metric: str, percentile: int | float, inplace=False, test_size=0.25, **kwargs):
         """Выбор указанного процента признаков"""
         target = self.__get_target(**kwargs)
 
@@ -415,7 +426,8 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_feature_elimination(self, n_features_to_select: int, step: int, inplace=False, test_size=0.25, **kwargs):
+    def select_elimination_features(self, n_features_to_select: int, step: int, inplace=False, test_size=0.25,
+                                    **kwargs):
         """Выбор n_features_to_select лучших признаков, путем рекурсивного удаления худших по step штук за итерацию"""
         target = self.__get_target(**kwargs)
 
@@ -444,7 +456,8 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_from_model(self, max_features: int, prefit, threshold=-np.inf, inplace=False, test_size=0.25, **kwargs):
+    def select_from_model_features(self, max_features: int, prefit, threshold=-np.inf, inplace=False, test_size=0.25,
+                                   **kwargs):
         """"""
         target = self.__get_target(**kwargs)
 
@@ -466,8 +479,8 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_sequential_feature(self, n_features_to_select: int, direction: str, inplace=False, test_size=0.25,
-                                  **kwargs):
+    def select_sequential_features(self, n_features_to_select: int, direction: str, inplace=False, test_size=0.25,
+                                   **kwargs):
         """"""
         target = self.__get_target(**kwargs)
         assert type(n_features_to_select) is int, f'{self.assert_sms} type(n_features_to_select) is int'
