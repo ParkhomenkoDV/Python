@@ -601,8 +601,18 @@ class Model:
 
 
 def classifier_or_regressor(model) -> str:
-    if 'cla' in type(model).__name__.lower(): return 'cla'
-    if 'reg' in type(model).__name__.lower(): return 'reg'
+    model_type = list()
+    try:
+        model_type.append(type(model).__name__.lower())
+    except:
+        pass
+    try:
+        model_type.append(model.__name__.lower())
+    except:
+        pass
+
+    if 'cla' in model_type: return 'cla'
+    if 'reg' in model_type: return 'reg'
     return ''
 
 
