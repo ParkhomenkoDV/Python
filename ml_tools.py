@@ -100,7 +100,10 @@ class DataFrame(pd.DataFrame):
 
     @property
     def target(self) -> str:
-        return self.__target
+        if self.__target in self.columns:
+            return self.__target
+        else:
+            raise f'{self.__target} not in {self.columns}'
 
     @target.setter
     def target(self, target: str):
@@ -112,6 +115,13 @@ class DataFrame(pd.DataFrame):
     @target.deleter
     def target(self):
         self.__target = ''
+
+    def __get_target(self, **kwargs) -> str:
+        """Получение target из словаря и приватного атрибута"""
+        target = kwargs.get('target', self.__target)
+        assert type(target) is str, f'{self.assert_sms} type(target) is str'
+        assert target in self.columns, f'{self.assert_sms} not in {self.columns}'
+        return target
 
     def impute(self):  # TODO: доделать
         """Замена локальных пропусков"""
@@ -259,6 +269,8 @@ class DataFrame(pd.DataFrame):
     def mutual_info_score(self, **kwargs) -> dict[str:float]:
         """Взаимная информация корреляции"""
         target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         result = dict()
         for column in self.drop([target], axis=1):
             result[column] = mutual_info_score(self[column], self[target])
@@ -266,16 +278,22 @@ class DataFrame(pd.DataFrame):
         return dict(result)
 
     @decorators.try_except('pass')
-    def permutation_importance(self, target: str):
+    def permutation_importance(self, **kwargs):
         """Перемешивающий подход"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         model = RandomForestClassifier()
         model.fit(self.drop([target], axis=1), self[target])
         result = permutation_importance(model, self.drop([target], axis=1), self[target])
         return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
 
     @decorators.try_except('pass')
-    def permutation_importance_plot(self, target: str, **kwargs):
+    def permutation_importance_plot(self, **kwargs):
         """Перемешивающий подход на столбчатой диаграмме"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         s = self.permutation_importance(target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
@@ -284,15 +302,21 @@ class DataFrame(pd.DataFrame):
         plt.show()
 
     @decorators.try_except('pass')
-    def feature_importances(self, target: str):
+    def feature_importances(self, **kwargs):
         """Важные признаки для классификации"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         model = RandomForestClassifier()
         model.fit(self.drop([target], axis=1), self[target])
         return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
 
     @decorators.try_except('pass')
-    def feature_importances_plot(self, target: str, **kwargs):
+    def feature_importances_plot(self, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         s = self.feature_importances(target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
@@ -310,9 +334,10 @@ class DataFrame(pd.DataFrame):
         df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
         return DataFrame(df)
 
-    def pca(self, n_components: int, target: str, inplace=False):
+    def pca(self, n_components: int, inplace=False, **kwargs):
         """Метод главный компонент для линейно-зависимых признаков"""
-
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
         assert n_components <= min(len(self.columns), len(self[target].unique())), \
             'n_components <= min(len(self.columns), len(self[target].unique()))'
 
@@ -326,15 +351,21 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def pcaplot(self, n_components: int, target: str):  # TODO: разобраться
+    def pcaplot(self, n_components: int, **kwargs):  # TODO: разобраться
         """"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         x_reduced = self.pca(n_components, target).to_numpy()
         plt.scatter(x_reduced[:, 0], x_reduced[:, 1], c=self[target], s=30, cmap='Set1')
         plt.grid(True)
         plt.show()
 
-    def lda(self, n_components: int, target, inplace=False):
+    def lda(self, n_components: int, inplace=False, **kwargs):
         """Линейно дискриминантный анализ для линейно-зависимых признаков"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         lda = LinearDiscriminantAnalysis(n_components=n_components)
         x, y = self.feature_target_split(target)
         x_reduced = DataFrame(lda.fit_transform(x, y))
@@ -344,8 +375,11 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def nca(self, n_components: int, target, inplace=False):
+    def nca(self, n_components: int, inplace=False, **kwargs):
         """Анализ компонентов соседств для нелинейных признаков"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
+
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
         x, y = self.feature_target_split(target)
         x_reduced = nca.fit_transform(x, y)
@@ -463,7 +497,10 @@ class DataFrame(pd.DataFrame):
             sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'boxplot'), file_extension='png')
 
-    def feature_target_split(self, target: str) -> tuple:
+    def feature_target_split(self, **kwargs) -> tuple:
+        """Разделение DataFrame на 2: features и target"""
+        target = kwargs.get('target', self.__target)
+        assert target, f'{self.assert_sms} target'
         assert type(target) is str, f'{self.assert_sms} type(target) is str'
         return self.drop([target], axis=1), self[target]
 
