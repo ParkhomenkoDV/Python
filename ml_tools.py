@@ -21,6 +21,10 @@ from sklearn.preprocessing import (Normalizer,
 
 from sklearn.inspection import permutation_importance
 
+from sklearn.decomposition import PCA as PrincipalComponentAnalysis
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.neighbors import NeighborhoodComponentsAnalysis
+
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
@@ -61,9 +65,9 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
                              average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
                              top_k_accuracy_score, calinski_harabasz_score)
 
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve, roc_curve
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve, roc_curve, auc
 
-from decorators import ignore_warnings
+from decorators import ignore_warnings, memit
 from tools import isiter, export2
 
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
@@ -82,6 +86,10 @@ class DataFrame(pd.DataFrame):
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
+
+    def impute(self):
+        """Замена локальных пропусков"""
+        pass
 
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
@@ -153,7 +161,7 @@ class DataFrame(pd.DataFrame):
         outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
             lower_bound, upper_bound = -np.inf, np.inf
-            if method == '3sigma':
+            if method == '3sigma':  # если данные распределены нормально!
                 mean = self[col].mean()
                 std = self[col].std()
                 lower_bound, upper_bound = mean - 3 * std, mean + 3 * std
@@ -224,7 +232,7 @@ class DataFrame(pd.DataFrame):
 
     @ignore_warnings
     def mutual_info_score(self, target: str) -> dict[str:float]:
-        """Взаимная информация"""
+        """Взаимная информация корреляции"""
         result = dict()
         for column in self.drop([target], axis=1):
             result[column] = mutual_info_score(self[column], self[target])
@@ -285,6 +293,19 @@ class DataFrame(pd.DataFrame):
         df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
         return DataFrame(df)
 
+    def pca(self, n_components: int, y):
+        """Метод главный компонент"""
+        pca = PrincipalComponentAnalysis(n_components=n_components)
+
+    def lda(self, n_components: int, y):
+        """Линейно дискриминантный анализ"""
+        lda = LinearDiscriminantAnalysis(n_components=n_components)
+
+    def nca(self, n_components: int, y):
+        """Анализ компонентов соседств"""
+        nca = NeighborhoodComponentsAnalysis(n_components=n_components)
+        pass
+
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
@@ -315,6 +336,9 @@ class DataFrame(pd.DataFrame):
         else:
             sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'boxplot'), file_extension='png')
+
+    def feature_target_split(self, y: str) -> tuple:
+        return self.drop([y], axis=1), self[y]
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
         """Разделение DataFrame на тренировочный и тестовый"""
@@ -507,6 +531,7 @@ class Model:
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.title(kwargs.get('title', 'precision recall curve'), fontsize=16, fontweight='bold')
         plt.plot(precision, recall, color='blue', label='PR')
+        plt.legend(loc='lower left')
         plt.xlim([0, 1])
         plt.ylim([0, 1])
         plt.grid(True)
@@ -521,8 +546,9 @@ class Model:
         fpr, tpr, threshold = roc_curve(y_true, y_predicted)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.title(kwargs.get('title', 'roc curve'), fontsize=16, fontweight='bold')
-        plt.plot(fpr, tpr, color='blue', label='ROC')
+        plt.plot(fpr, tpr, color='blue', label=f'ROC-AUC = {auc(fpr, tpr)}')
         plt.plot([0, 1], [0, 1], color='red')
+        plt.legend(loc='lower right')
         plt.xlim([0, 1])
         plt.ylim([0, 1])
         plt.grid(True)
@@ -540,38 +566,37 @@ class Model:
 
 
 def classifier_or_regressor(model) -> str:
-    if 'cla' in (type(model).__name__.lower(), model.__name__.lower()): return 'cla'
-    if 'reg' in (type(model).__name__.lower(), model.__name__.lower()): return 'reg'
+    if 'cla' in type(model).__name__.lower(): return 'cla'
+    if 'reg' in type(model).__name__.lower(): return 'reg'
     return ''
-
-
-class Bagging:
-
-    # TODO: доделать
-    def __init__(self, model, n_estimators, max_samples, max_features, random_state=42):
-        bagging_type = classifier_or_regressor(model)
-        if bagging_type == 'cla':
-            self.bagging = BaggingClassifier()
-        elif bagging_type == 'reg':
-            self.bagging = BaggingRegressor()
-        else:
-            raise '!!!'
-
-        self.model = model
-        self.n_estimators = n_estimators,
-        self.max_samples = max_samples,
-        self.max_features = max_features,
-        self.random_state = random_state
-
-    def fit(self, x, y):
-        self.bagging.fit(x, y)
 
 
 class Stacking:
 
     # TODO: доделать
-    def __init__(self, model):
+    def __init__(self, models: tuple | list):
         self.stacking = StackingClassifier() if 'cla' in type(model).__name__.lower() else StackingRegressor()
+
+
+class Bagging:
+
+    def __init__(self, model, **kwargs):
+        bagging_type = classifier_or_regressor(model)
+        if bagging_type == 'cla':
+            self.__bagging = BaggingClassifier(model, **kwargs)
+        elif bagging_type == 'reg':
+            self.__bagging = BaggingRegressor(model, **kwargs)
+        else:
+            raise 'type(model) is "classifier" or "regressor"'
+
+    def __call__(self):
+        return self.__bagging
+
+    def fit(self, x, y):
+        self.__bagging.fit(x, y)
+
+    def predict(self, x):
+        return self.__bagging.predict(x)
 
 
 class Boosting:
