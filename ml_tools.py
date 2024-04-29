@@ -303,6 +303,16 @@ class DataFrame(pd.DataFrame):
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
         return dict(result)
 
+    def mutual_info_score_plot(self, **kwargs):
+        """График взаимной информации корреляции"""
+        mutual_info_score = pd.Series(self.mutual_info_score(**kwargs)).sort_values(ascending=True)
+
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.xlabel('mutual info score')
+        plt.ylabel('features')
+        plt.barh(mutual_info_score.index, mutual_info_score)
+        plt.show()
+
     @decorators.try_except('pass')
     def permutation_importance(self, **kwargs):
         """Перемешивающий подход"""
