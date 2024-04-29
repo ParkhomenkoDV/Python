@@ -337,29 +337,28 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_k_best(self, metrica: str, k: int, target: str, inplace=False, test_size=0.25):
-
+    def __select_metric(self, metric: str):
+        """Вспомогательная функция к выбору метрики"""
         METRICS = {'classification': ('f_classification', 'mutual_info_classification', 'chi2'),
                    'regression': ('f_regression', 'mutual_info_regression')}
 
-        assert type(metrica) is str, f'{self.assert_sms} type(metrics) is str'
-        metrica = metrica.strip().lower()
-        assert metrica in [v for value in METRICS.values() for v in value], f'{self.assert_sms} metrics in {METRICS}'
+        assert type(metric) is str, f'{self.assert_sms} type(metrics) is str'
+        metric = metric.strip().lower()
+        assert metric in [v for value in METRICS.values() for v in value], f'{self.assert_sms} metrics in {METRICS}'
+
+        if metric == 'f_classification': return f_classification
+        if metric == 'mutual_info_classification': return mutual_info_classification
+        if metric == 'chi2': return chi2
+        if metric == 'f_regression': return f_regression
+        if metric == 'mutual_info_regression': return mutual_info_regression
+
+    def select_k_best(self, metric: str, k: int, target: str, inplace=False, test_size=0.25):
+        """Выбор k лучших признаков"""
+
         assert type(k) is int, f'{self.assert_sms} type(k) is int'
         assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= len(self.columns)'
 
-        if metrica == 'f_classification':
-            m = f_classification
-        elif metrica == 'mutual_info_classification':
-            m = mutual_info_classification
-        elif metrica == 'chi2':
-            m = chi2
-        elif metrica == 'f_regression':
-            m = f_regression
-        elif metrica == 'mutual_info_regression':
-            m = mutual_info_regression
-
-        skb = SelectKBest(m, k=k)
+        skb = SelectKBest(self.__select_metric(metric), k=k)
         x, y = self.feature_target_split(target)
         x_reduced = DataFrame(skb.fit_transform(x, y))
 
@@ -374,8 +373,26 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def SelectPercentile(self):
-        sp = SelectPercentile
+    def select_percentile(self, metric: str, percentile: int | float, target: str, inplace=False, test_size=0.25):
+        """Выбор указанного персентиля признаков"""
+
+        assert type(percentile) in (int, float), f'{self.assert_sms} type(percentile) in (int, float)'
+        assert 0 < percentile < 100, f'{self.assert_sms} 0 < percentile < 100'
+
+        sp = SelectPercentile(self.__select_metric(metric), percentile=percentile)
+        x, y = self.feature_target_split(target)
+        x_reduced = DataFrame(sp.fit_transform(x, y))
+
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, self[target], stratify=self[target],
+                                                            test_size=test_size, shuffle=True, random_state=0)
+        knn = KNeighborsClassifier().fit(x_train, y_train)
+        score = knn.score(x_test, y_test)
+        print(f'score: {score}')
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
