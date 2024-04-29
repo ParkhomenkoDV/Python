@@ -25,12 +25,13 @@ from sklearn.decomposition import PCA as PrincipalComponentAnalysis
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.neighbors import NeighborhoodComponentsAnalysis
 
-from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import (f_classif as f_classification, mutual_info_classif as mutual_info_classification,
                                        chi2)
 from sklearn.feature_selection import (f_regression, mutual_info_regression)
 
+from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import SelectPercentile
+from sklearn.feature_selection import RFE as RecursiveFeatureElimination
 
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
@@ -95,6 +96,20 @@ class DataFrame(pd.DataFrame):
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
+        self.__target = None
+
+    @property
+    def target(self):
+        return self.__target
+
+    @target.setter
+    def target(self, target: str):
+        if target in self.columns:
+            self.__target = target
+
+    @target.deleter
+    def target(self):
+        self.__target = None
 
     def impute(self):  # TODO: доделать
         """Замена локальных пропусков"""
@@ -362,7 +377,7 @@ class DataFrame(pd.DataFrame):
         x, y = self.feature_target_split(target)
         x_reduced = DataFrame(skb.fit_transform(x, y))
 
-        x_train, x_test, y_train, y_test = train_test_split(x_reduced, self[target], stratify=self[target],
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
                                                             test_size=test_size, shuffle=True, random_state=0)
         knn = KNeighborsClassifier().fit(x_train, y_train)
         score = knn.score(x_test, y_test)
@@ -374,7 +389,7 @@ class DataFrame(pd.DataFrame):
             return x_reduced
 
     def select_percentile(self, metric: str, percentile: int | float, target: str, inplace=False, test_size=0.25):
-        """Выбор указанного персентиля признаков"""
+        """Выбор указанного процента признаков"""
 
         assert type(percentile) in (int, float), f'{self.assert_sms} type(percentile) in (int, float)'
         assert 0 < percentile < 100, f'{self.assert_sms} 0 < percentile < 100'
@@ -383,7 +398,7 @@ class DataFrame(pd.DataFrame):
         x, y = self.feature_target_split(target)
         x_reduced = DataFrame(sp.fit_transform(x, y))
 
-        x_train, x_test, y_train, y_test = train_test_split(x_reduced, self[target], stratify=self[target],
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
                                                             test_size=test_size, shuffle=True, random_state=0)
         knn = KNeighborsClassifier().fit(x_train, y_train)
         score = knn.score(x_test, y_test)
@@ -393,6 +408,26 @@ class DataFrame(pd.DataFrame):
             self.__init__(x_reduced)
         else:
             return x_reduced
+
+    def select_k_worst(self, n_features_to_select: int, target: str, test_size=0.25):
+        """Выбор k худших признаков"""
+
+        x, y = self.feature_target_split(target)
+        x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y,
+                                                            test_size=test_size, shuffle=True, random_state=0)
+        model = RandomForestClassifier().fit(x_train, y_train)
+        # TODO: step?
+        rfe = RecursiveFeatureElimination(model, n_features_to_select=n_features_to_select, step=1).fit(x_train,
+                                                                                                        y_train)
+
+        print(rfe.support_)
+        print(rfe.ranking_)
+
+        X_tr = rfe.transform(x_train)
+        X_t = rfe.transform(x_test)
+
+        rf = RandomForestClassifier().fit(X_tr, y_train)
+        rf.score(X_t, y_test)
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
