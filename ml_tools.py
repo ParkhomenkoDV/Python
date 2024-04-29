@@ -25,6 +25,11 @@ from sklearn.decomposition import PCA as PrincipalComponentAnalysis
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.neighbors import NeighborhoodComponentsAnalysis
 
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import (f_classif as f_classification, mutual_info_classif as mutual_info_classification,
+                                       chi2)
+from sklearn.feature_selection import (f_regression, mutual_info_regression)
+
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
@@ -67,7 +72,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_s
 
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve, roc_curve, auc
 
-from decorators import ignore_warnings, memit
+import decorators
 from tools import isiter, export2
 
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
@@ -89,7 +94,7 @@ class DataFrame(pd.DataFrame):
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
 
-    def impute(self):
+    def impute(self):  # TODO: доделать
         """Замена локальных пропусков"""
         pass
 
@@ -208,11 +213,12 @@ class DataFrame(pd.DataFrame):
         return result
 
     def l1_importance(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False):
-        # TODO: threshold l1
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         l1_models = self.l1_models(y, l1=l1, scale=scale, early_stopping=early_stopping)
         df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=self.drop([y], axis=1).columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))  # .fillna(0.0)
+
+    # TODO: threshold l1
 
     def l1_importance_plot(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
                            **kwargs):
@@ -230,7 +236,7 @@ class DataFrame(pd.DataFrame):
         plt.xlim([0, l1[-1]])
         plt.show()
 
-    @ignore_warnings
+    @decorators.ignore_warnings
     def mutual_info_score(self, target: str) -> dict[str:float]:
         """Взаимная информация корреляции"""
         result = dict()
@@ -239,43 +245,35 @@ class DataFrame(pd.DataFrame):
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
         return dict(result)
 
+    @decorators.try_except('pass')
     def permutation_importance(self, target: str):
         """Перемешивающий подход"""
         model = RandomForestClassifier()
-        try:
-            model.fit(self.drop([target], axis=1), self[target])
-            result = permutation_importance(model, self.drop([target], axis=1), self[target])
-            return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
-        except Exception as e:
-            print(e)
+        model.fit(self.drop([target], axis=1), self[target])
+        result = permutation_importance(model, self.drop([target], axis=1), self[target])
+        return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
 
+    @decorators.try_except('pass')
     def permutation_importance_plot(self, target: str, **kwargs):
         """Перемешивающий подход на столбчатой диаграмме"""
-        try:
-            s = self.permutation_importance(target).sort_values(ascending=True)
-        except:
-            return
+        s = self.permutation_importance(target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(s.index, s)
         plt.show()
 
+    @decorators.try_except('pass')
     def feature_importances(self, target: str):
         """Важные признаки для классификации"""
         model = RandomForestClassifier()
-        try:
-            model.fit(self.drop([target], axis=1), self[target])
-            return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
-        except Exception as e:
-            print(e)
+        model.fit(self.drop([target], axis=1), self[target])
+        return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
 
+    @decorators.try_except('pass')
     def feature_importances_plot(self, target: str, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
-        try:
-            s = self.feature_importances(target).sort_values(ascending=True)
-        except:
-            return
+        s = self.feature_importances(target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
@@ -292,17 +290,55 @@ class DataFrame(pd.DataFrame):
         df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
         return DataFrame(df)
 
-    def pca(self, n_components: int, y):
-        """Метод главный компонент"""
+    def pca(self, n_components: int, target, inplace=False):
+        """Метод главный компонент для линейно-зависимых признаков"""
         pca = PrincipalComponentAnalysis(n_components=n_components)
+        x, y = self.feature_target_split(target)
+        x_reduced = pca.fit_transform(x, y)
+        evr = pca.explained_variance_ratio_  # потеря до 20% приемлема
+        print(f'Объем потерянной и сохраненной информации: {evr, 1 - evr}')
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
 
-    def lda(self, n_components: int, y):
-        """Линейно дискриминантный анализ"""
+    def pcaplot(self):
+        pass
+
+    def lda(self, n_components: int, target, inplace=False):
+        """Линейно дискриминантный анализ для линейно-зависимых признаков"""
         lda = LinearDiscriminantAnalysis(n_components=n_components)
+        x, y = self.feature_target_split(target)
+        x_reduced = lda.fit_transform(x, y)
 
-    def nca(self, n_components: int, y):
-        """Анализ компонентов соседств"""
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
+
+    def nca(self, n_components: int, target, inplace=False):
+        """Анализ компонентов соседств для нелинейных признаков"""
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
+        x, y = self.feature_target_split(target)
+        x_reduced = nca.fit_transform(x, y)
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
+
+    def select_k_best(self, metrics: str, k: int, target: str):
+
+        """
+        - For regression: f_regression, mutual_info_regression
+        - For classification: f_classification, mutual_info_classification, chi2
+        """
+
+        assert type(metrics) is str, f'{self.assert_sms} type(metrics) is str'
+
+        skb = SelectKBest(metrics, k=10)
+        x, y = self.feature_target_split(target)
+        x_reduced = skb.fit_transform(x, y)
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
@@ -336,7 +372,7 @@ class DataFrame(pd.DataFrame):
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'boxplot'), file_extension='png')
 
     def feature_target_split(self, target: str) -> tuple:
-        assert type(target) in str, f'{self.assert_sms} type(target) in str'
+        assert type(target) is str, f'{self.assert_sms} type(target) is str'
         return self.drop([target], axis=1), self[target]
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
@@ -574,7 +610,8 @@ class Stacking:
 
     # TODO: доделать
     def __init__(self, models: tuple | list):
-        self.stacking = StackingClassifier() if 'cla' in type(model).__name__.lower() else StackingRegressor()
+        pass
+        # self.stacking = StackingClassifier() if 'cla' in type(model).__name__.lower() else StackingRegressor()
 
 
 class Bagging:
