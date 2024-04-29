@@ -96,20 +96,22 @@ class DataFrame(pd.DataFrame):
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
-        self.__target = None
+        self.__target = ''
 
     @property
-    def target(self):
+    def target(self) -> str:
         return self.__target
 
     @target.setter
     def target(self, target: str):
         if target in self.columns:
             self.__target = target
+        else:
+            raise f'{target} not in {self.columns}!'
 
     @target.deleter
     def target(self):
-        self.__target = None
+        self.__target = ''
 
     def impute(self):  # TODO: доделать
         """Замена локальных пропусков"""
@@ -254,8 +256,9 @@ class DataFrame(pd.DataFrame):
         plt.show()
 
     @decorators.ignore_warnings
-    def mutual_info_score(self, target: str) -> dict[str:float]:
+    def mutual_info_score(self, **kwargs) -> dict[str:float]:
         """Взаимная информация корреляции"""
+        target = kwargs.get('target', self.__target)
         result = dict()
         for column in self.drop([target], axis=1):
             result[column] = mutual_info_score(self[column], self[target])
