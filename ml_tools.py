@@ -30,6 +30,8 @@ from sklearn.feature_selection import (f_classif as f_classification, mutual_inf
                                        chi2)
 from sklearn.feature_selection import (f_regression, mutual_info_regression)
 
+from sklearn.feature_selection import SelectPercentile
+
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
 from sklearn.linear_model import (SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
@@ -290,26 +292,34 @@ class DataFrame(pd.DataFrame):
         df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
         return DataFrame(df)
 
-    def pca(self, n_components: int, target, inplace=False):
+    def pca(self, n_components: int, target: str, inplace=False):
         """Метод главный компонент для линейно-зависимых признаков"""
+
+        assert n_components <= min(len(self.columns), len(self[target].unique())), \
+            'n_components <= min(len(self.columns), len(self[target].unique()))'
+
         pca = PrincipalComponentAnalysis(n_components=n_components)
         x, y = self.feature_target_split(target)
-        x_reduced = pca.fit_transform(x, y)
+        x_reduced = DataFrame(pca.fit_transform(x, y))
         evr = pca.explained_variance_ratio_  # потеря до 20% приемлема
-        print(f'Объем потерянной и сохраненной информации: {evr, 1 - evr}')
+        print(f'Объем потерянной и сохраненной информации: {evr}')
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def pcaplot(self):
-        pass
+    def pcaplot(self, n_components: int, target: str):  # TODO: разобраться
+        """"""
+        x_reduced = self.pca(n_components, target).to_numpy()
+        plt.scatter(x_reduced[:, 0], x_reduced[:, 1], c=self[target], s=30, cmap='Set1')
+        plt.grid(True)
+        plt.show()
 
     def lda(self, n_components: int, target, inplace=False):
         """Линейно дискриминантный анализ для линейно-зависимых признаков"""
         lda = LinearDiscriminantAnalysis(n_components=n_components)
         x, y = self.feature_target_split(target)
-        x_reduced = lda.fit_transform(x, y)
+        x_reduced = DataFrame(lda.fit_transform(x, y))
 
         if inplace:
             self.__init__(x_reduced)
@@ -327,18 +337,45 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_k_best(self, metrics: str, k: int, target: str):
+    def select_k_best(self, metrica: str, k: int, target: str, inplace=False, test_size=0.25):
 
-        """
-        - For regression: f_regression, mutual_info_regression
-        - For classification: f_classification, mutual_info_classification, chi2
-        """
+        METRICS = {'classification': ('f_classification', 'mutual_info_classification', 'chi2'),
+                   'regression': ('f_regression', 'mutual_info_regression')}
 
-        assert type(metrics) is str, f'{self.assert_sms} type(metrics) is str'
+        assert type(metrica) is str, f'{self.assert_sms} type(metrics) is str'
+        metrica = metrica.strip().lower()
+        assert metrica in [v for value in METRICS.values() for v in value], f'{self.assert_sms} metrics in {METRICS}'
+        assert type(k) is int, f'{self.assert_sms} type(k) is int'
+        assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= len(self.columns)'
 
-        skb = SelectKBest(metrics, k=10)
+        if metrica == 'f_classification':
+            m = f_classification
+        elif metrica == 'mutual_info_classification':
+            m = mutual_info_classification
+        elif metrica == 'chi2':
+            m = chi2
+        elif metrica == 'f_regression':
+            m = f_regression
+        elif metrica == 'mutual_info_regression':
+            m = mutual_info_regression
+
+        skb = SelectKBest(m, k=k)
         x, y = self.feature_target_split(target)
-        x_reduced = skb.fit_transform(x, y)
+        x_reduced = DataFrame(skb.fit_transform(x, y))
+
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, self[target], stratify=self[target],
+                                                            test_size=test_size, shuffle=True, random_state=0)
+        knn = KNeighborsClassifier().fit(x_train, y_train)
+        score = knn.score(x_test, y_test)
+        print(f'score: {score}')
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
+
+    def SelectPercentile(self):
+        sp = SelectPercentile
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
