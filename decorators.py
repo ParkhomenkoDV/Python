@@ -62,6 +62,29 @@ def ignore_warnings(function):
     return wrapper
 
 
+def try_except(order: str = 'pass'):
+    """Обработка исключений"""
+
+    assert type(order) is str, 'type(order) is str'
+    order = order.strip().lower()
+    assert order in ("pass", "raise"), 'order in ("pass", "raise")'
+
+    def decorate(function):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+            try:
+                return function(*args, **kwargs)
+            except Exception as exception:
+                if order == 'raise':
+                    raise exception
+                else:
+                    print(exception)
+
+        return wrapper
+
+    return decorate
+
+
 def timeit(rnd=4):
     """Измерение времени выполнения ф-и"""
 
