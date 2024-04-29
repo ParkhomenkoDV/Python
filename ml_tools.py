@@ -32,6 +32,8 @@ from sklearn.feature_selection import (f_regression, mutual_info_regression)
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import SelectPercentile
 from sklearn.feature_selection import RFE as RecursiveFeatureElimination
+from sklearn.feature_selection import SelectFromModel
+from sklearn.feature_selection import SequentialFeatureSelector
 
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
 
@@ -100,17 +102,14 @@ class DataFrame(pd.DataFrame):
 
     @property
     def target(self) -> str:
-        if self.__target in self.columns:
-            return self.__target
-        else:
-            raise f'{self.__target} not in {self.columns}'
+        return self.__target
 
     @target.setter
     def target(self, target: str):
         if target in self.columns:
             self.__target = target
         else:
-            raise f'{target} not in {self.columns}!'
+            raise Exception(f'target "{self.__target}" not in {self.columns.to_list()}')
 
     @target.deleter
     def target(self):
@@ -120,7 +119,7 @@ class DataFrame(pd.DataFrame):
         """Получение target из словаря и приватного атрибута"""
         target = kwargs.get('target', self.__target)
         assert type(target) is str, f'{self.assert_sms} type(target) is str'
-        assert target in self.columns, f'{self.assert_sms} not in {self.columns}'
+        assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
         return target
 
     def impute(self):  # TODO: доделать
@@ -268,8 +267,7 @@ class DataFrame(pd.DataFrame):
     @decorators.ignore_warnings
     def mutual_info_score(self, **kwargs) -> dict[str:float]:
         """Взаимная информация корреляции"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         result = dict()
         for column in self.drop([target], axis=1):
@@ -280,8 +278,7 @@ class DataFrame(pd.DataFrame):
     @decorators.try_except('pass')
     def permutation_importance(self, **kwargs):
         """Перемешивающий подход"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         model = RandomForestClassifier()
         model.fit(self.drop([target], axis=1), self[target])
@@ -291,8 +288,7 @@ class DataFrame(pd.DataFrame):
     @decorators.try_except('pass')
     def permutation_importance_plot(self, **kwargs):
         """Перемешивающий подход на столбчатой диаграмме"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         s = self.permutation_importance(target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
@@ -304,8 +300,7 @@ class DataFrame(pd.DataFrame):
     @decorators.try_except('pass')
     def feature_importances(self, **kwargs):
         """Важные признаки для классификации"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         model = RandomForestClassifier()
         model.fit(self.drop([target], axis=1), self[target])
@@ -314,10 +309,9 @@ class DataFrame(pd.DataFrame):
     @decorators.try_except('pass')
     def feature_importances_plot(self, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
-        s = self.feature_importances(target).sort_values(ascending=True)
+        s = self.feature_importances(target=target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
@@ -336,13 +330,12 @@ class DataFrame(pd.DataFrame):
 
     def pca(self, n_components: int, inplace=False, **kwargs):
         """Метод главный компонент для линейно-зависимых признаков"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
         assert n_components <= min(len(self.columns), len(self[target].unique())), \
             'n_components <= min(len(self.columns), len(self[target].unique()))'
 
         pca = PrincipalComponentAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target)
+        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(pca.fit_transform(x, y))
         evr = pca.explained_variance_ratio_  # потеря до 20% приемлема
         print(f'Объем потерянной и сохраненной информации: {evr}')
@@ -353,21 +346,31 @@ class DataFrame(pd.DataFrame):
 
     def pcaplot(self, n_components: int, **kwargs):  # TODO: разобраться
         """"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
-        x_reduced = self.pca(n_components, target).to_numpy()
+        x_reduced = self.pca(n_components, target=target).to_numpy()
+
+        fg = plt.figure(figsize=(12, 6))
+        gs = fg.add_gridspec(1, 2)
+
+        fg.add_subplot(gs[0, 0])
         plt.scatter(x_reduced[:, 0], x_reduced[:, 1], c=self[target], s=30, cmap='Set1')
         plt.grid(True)
+
+        fg.add_subplot(gs[0, 1])
+        sns.histplot(x=list(x_reduced.reshape(1, -1)[0]),
+                     # hue=self[target],
+                     element="poly")
+        plt.grid(True)
+
         plt.show()
 
     def lda(self, n_components: int, inplace=False, **kwargs):
         """Линейно дискриминантный анализ для линейно-зависимых признаков"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         lda = LinearDiscriminantAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target)
+        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(lda.fit_transform(x, y))
 
         if inplace:
@@ -377,12 +380,11 @@ class DataFrame(pd.DataFrame):
 
     def nca(self, n_components: int, inplace=False, **kwargs):
         """Анализ компонентов соседств для нелинейных признаков"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
+        target = self.__get_target(**kwargs)
 
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target)
-        x_reduced = nca.fit_transform(x, y)
+        x, y = self.feature_target_split(target=target)
+        x_reduced = DataFrame(nca.fit_transform(x, y))
 
         if inplace:
             self.__init__(x_reduced)
@@ -404,14 +406,15 @@ class DataFrame(pd.DataFrame):
         if metric == 'f_regression': return f_regression
         if metric == 'mutual_info_regression': return mutual_info_regression
 
-    def select_k_best(self, metric: str, k: int, target: str, inplace=False, test_size=0.25):
+    def select_k_best(self, metric: str, k: int, inplace=False, test_size=0.25, **kwargs):
         """Выбор k лучших признаков"""
+        target = self.__get_target(**kwargs)
 
         assert type(k) is int, f'{self.assert_sms} type(k) is int'
         assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= len(self.columns)'
 
         skb = SelectKBest(self.__select_metric(metric), k=k)
-        x, y = self.feature_target_split(target)
+        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(skb.fit_transform(x, y))
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
@@ -425,14 +428,15 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_percentile(self, metric: str, percentile: int | float, target: str, inplace=False, test_size=0.25):
+    def select_percentile(self, metric: str, percentile: int | float, inplace=False, test_size=0.25, **kwargs):
         """Выбор указанного процента признаков"""
+        target = self.__get_target(**kwargs)
 
         assert type(percentile) in (int, float), f'{self.assert_sms} type(percentile) in (int, float)'
         assert 0 < percentile < 100, f'{self.assert_sms} 0 < percentile < 100'
 
         sp = SelectPercentile(self.__select_metric(metric), percentile=percentile)
-        x, y = self.feature_target_split(target)
+        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(sp.fit_transform(x, y))
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
@@ -446,16 +450,16 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def select_k_worst(self, n_features_to_select: int, target: str, test_size=0.25):
+    def select_k_worst(self, n_features_to_select: int, inplace=False, test_size=0.25, **kwargs):
         """Выбор k худших признаков"""
+        target = self.__get_target(**kwargs)
 
-        x, y = self.feature_target_split(target)
+        x, y = self.feature_target_split(target=target)
         x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y,
                                                             test_size=test_size, shuffle=True, random_state=0)
         model = RandomForestClassifier().fit(x_train, y_train)
-        # TODO: step?
-        rfe = RecursiveFeatureElimination(model, n_features_to_select=n_features_to_select, step=1).fit(x_train,
-                                                                                                        y_train)
+        rfe = RecursiveFeatureElimination(model, n_features_to_select=n_features_to_select, step=1)  # TODO: step?
+        rfe.fit(x_train, y_train)
 
         print(rfe.support_)
         print(rfe.ranking_)
@@ -465,6 +469,39 @@ class DataFrame(pd.DataFrame):
 
         rf = RandomForestClassifier().fit(X_tr, y_train)
         rf.score(X_t, y_test)
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
+
+    def select_from_model(self):
+        sfm = SelectFromModel
+
+    def select_sequential_feature(self, n_features_to_select: int, direction: str, inplace=False, test_size=0.25,
+                                  **kwargs):
+        """"""
+        target = self.__get_target(**kwargs)
+        assert type(n_features_to_select) is int, f'{self.assert_sms} type(n_features_to_select) is int'
+        assert 1 < n_features_to_select, f'{self.assert_sms} 1 < n_features_to_select'
+        assert direction in ("forward", "backward"), f'{self.assert_sms} direction in ("forward", "backward")'
+
+        sfs = SequentialFeatureSelector(RandomForestClassifier(),
+                                        n_features_to_select=n_features_to_select,
+                                        direction=direction)
+        x, y = self.feature_target_split(target=target)
+        x_reduced = DataFrame(sfs.fit_transform(x, y))
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
+                                                            test_size=test_size, shuffle=True, random_state=0)
+
+        rf = RandomForestClassifier().fit(x_train, y_train)
+        score = rf.score(x_test, y_test)
+        print(f'score: {score}')
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
@@ -499,9 +536,7 @@ class DataFrame(pd.DataFrame):
 
     def feature_target_split(self, **kwargs) -> tuple:
         """Разделение DataFrame на 2: features и target"""
-        target = kwargs.get('target', self.__target)
-        assert target, f'{self.assert_sms} target'
-        assert type(target) is str, f'{self.assert_sms} type(target) is str'
+        target = self.__get_target(**kwargs)
         return self.drop([target], axis=1), self[target]
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
@@ -785,6 +820,8 @@ if __name__ == '__main__':
     df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
     df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
                   "Thickness [m]", "Pressure level [db]"]
+    target = "Pressure level [db]"
+    df.target = target
     print(df)
     print(df.detect_outliers())
     print(df.find_corr_features())
