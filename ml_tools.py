@@ -84,6 +84,8 @@ def img_show(img, title='image', figsize=(12, 12)):
 class DataFrame(pd.DataFrame):
     """Расширенный класс pandas.DataFrame"""
 
+    assert_sms = 'Incorrect assert:'
+
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
 
@@ -152,11 +154,10 @@ class DataFrame(pd.DataFrame):
             return df
 
     def detect_outliers(self, method: str = '3sigma'):
-        assert_sms = 'Incorrect assert'
-        assert type(self) is DataFrame, f'{assert_sms} type(df) is DataFrame'
-        assert type(method) is str, f'{assert_sms} type(method) is str'
+        assert type(self) is DataFrame, f'{self.assert_sms} type(df) is DataFrame'
+        assert type(method) is str, f'{self.assert_sms} type(method) is str'
         method = method.strip().lower()
-        assert method in ('3sigma', 'tukey'), f'{assert_sms} method in ("3sigma", "Tukey")!'
+        assert method in ('3sigma', 'tukey'), f'{self.assert_sms} method in ("3sigma", "Tukey")!'
 
         outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
@@ -195,9 +196,8 @@ class DataFrame(pd.DataFrame):
 
     def l1_models(self, y, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False) -> list:
         """Линейные модели с разной L1-регуляризацией"""
-        assert_sms = 'Incorrect assert:'
-        assert type(y) is str, f'{assert_sms} type(y) is str'
-        assert isiter(l1), f'{assert_sms} isiter(l1)'
+        assert type(y) is str, f'{self.assert_sms} type(y) is str'
+        assert isiter(l1), f'{self.assert_sms} isiter(l1)'
 
         x = StandardScaler().fit_transform(self.drop([y], axis=1)) if scale else self.drop([y], axis=1)
         result = list()
@@ -284,8 +284,7 @@ class DataFrame(pd.DataFrame):
 
     def balance(self, column_name: str):
         """Сбалансированность класса"""
-        assert_sms = 'Incorrect assert:'
-        assert column_name in self.columns, f'{assert_sms} column_name in self.columns'
+        assert column_name in self.columns, f'{self.assert_sms} column_name in self.columns'
 
         len_unique = len(self[column_name].unique())
         df = self.value_counts(column_name).to_frame()
@@ -304,7 +303,6 @@ class DataFrame(pd.DataFrame):
     def nca(self, n_components: int, y):
         """Анализ компонентов соседств"""
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
-        pass
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
@@ -337,8 +335,9 @@ class DataFrame(pd.DataFrame):
             sns.boxplot(pd.DataFrame(StandardScaler().fit_transform(self), columns=self.columns), fill=fill)
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'boxplot'), file_extension='png')
 
-    def feature_target_split(self, y: str) -> tuple:
-        return self.drop([y], axis=1), self[y]
+    def feature_target_split(self, target: str) -> tuple:
+        assert type(target) in str, f'{self.assert_sms} type(target) in str'
+        return self.drop([target], axis=1), self[target]
 
     def train_test_split(self, test_size, shuffle=True, random_state=0):
         """Разделение DataFrame на тренировочный и тестовый"""
