@@ -369,8 +369,8 @@ class DataFrame(pd.DataFrame):
         """Важные признаки для классификации"""
         target = self.__get_target(**kwargs)
 
-        model = RandomForestClassifier()
-        model.fit(self.drop([target], axis=1), self[target])
+        x, y = self.feature_target_split(target=target)
+        model = RandomForestClassifier().fit(x, y)
         return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
 
     @decorators.try_except('pass')
@@ -385,8 +385,19 @@ class DataFrame(pd.DataFrame):
         plt.barh(s.index, s)
         plt.show()
 
-    def select_importance_features(self, **kwargs) -> list[str]:  # TODO: threshold: float or n_features: int!!!
-        importance_features = self.importance_features
+    def select_importance_features(self, threshold: int | float, **kwargs) -> list[str]:
+        """Выбор важных признаков для классификации"""
+        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
+
+        importance_features = self.importance_features(**kwargs)
+        if not importance_features: return list()
+        if type(threshold) is int:  # количество выбираемых признаков
+            assert 1 <= threshold < len(importance_features), \
+                f'{self.assert_sms} 1 <= threshold < {len(importance_features)}'
+            return importance_features[:threshold].index.to_list()
+        else:  # порог значения признаков
+            assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
+            return importance_features[importance_features > threshold].index.to_list()
 
     def __select_metric(self, metric: str):
         """Вспомогательная функция к выбору метрики"""
@@ -932,3 +943,8 @@ if __name__ == '__main__':
     # print(df.select_mutual_info_score_features(1))
     # print(df.select_mutual_info_score_features(1.9))
     # print(df.select_mutual_info_score_features(50.))
+    # print(df.importance_features())
+    # print(df.select_importance_features(4))
+    # print(df.select_importance_features(1))
+    # print(df.select_importance_features(1.9))
+    # print(df.select_importance_features(50.))
