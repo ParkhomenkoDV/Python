@@ -122,13 +122,6 @@ class DataFrame(pd.DataFrame):
         assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
         return target
 
-    def impute(self, inplace=False):  # TODO: доделать
-        """Замена локальных пропусков"""
-        if inplace:
-            self.__init__()
-        else:
-            return
-
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
         df = DataFrame()
@@ -414,29 +407,31 @@ class DataFrame(pd.DataFrame):
         if metric == 'f_regression': return f_regression
         if metric == 'mutual_info_regression': return mutual_info_regression
 
-    def select_k_best_features(self, metric: str, k: int, inplace=False, test_size=0.25, **kwargs):
+    def select_k_best_features(self, metric: str, k: int, inplace=False, **kwargs):
         """Выбор k лучших признаков"""
         target = self.__get_target(**kwargs)
 
         assert type(k) is int, f'{self.assert_sms} type(k) is int'
-        assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= len(self.columns)'
+        assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= {len(self.columns)}'
 
         skb = SelectKBest(self.__select_metric(metric), k=k)
         x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(skb.fit_transform(x, y))
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
-                                                            test_size=test_size, shuffle=True, random_state=0)
-        model = KNeighborsClassifier().fit(x_train, y_train)
-        score = model.score(x_test, y_test)
-        print(f'score: {score}')
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
 
         if inplace:
             self.__init__(x_reduced)
         else:
             return x.columns[skb.get_support()]
 
-    def select_percentile_features(self, metric: str, percentile: int | float, inplace=False, test_size=0.25, **kwargs):
+    def select_percentile_features(self, metric: str, percentile: int | float, inplace=False, **kwargs):
         """Выбор указанного процента признаков"""
         target = self.__get_target(**kwargs)
 
@@ -448,18 +443,19 @@ class DataFrame(pd.DataFrame):
         x_reduced = DataFrame(sp.fit_transform(x, y))
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
-                                                            test_size=test_size, shuffle=True, random_state=0)
-        model = KNeighborsClassifier().fit(x_train, y_train)
-        score = model.score(x_test, y_test)
-        print(f'score: {score}')
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
 
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def select_elimination_features(self, n_features_to_select: int, step: int, inplace=False, test_size=0.25,
-                                    **kwargs):
+    def select_elimination_features(self, n_features_to_select: int, step: int, inplace=False, **kwargs):
         """Выбор n_features_to_select лучших признаков, путем рекурсивного удаления худших по step штук за итерацию"""
         target = self.__get_target(**kwargs)
 
@@ -474,47 +470,47 @@ class DataFrame(pd.DataFrame):
         x_reduced = DataFrame(rfe.fit_transform(x, y))
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
-                                                            test_size=test_size, shuffle=True, random_state=0)
-
-        # print(rfe.support_)  # кто удалился
-        # print(rfe.ranking_)  # порядок удаления features (кто больше, тот раньше ушел)
-
-        model = RandomForestClassifier().fit(x_train, y_train)
-        score = model.score(x_test, y_test)
-        print(f'score: {score}')
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = RandomForestClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
+            # print(rfe.support_)  # кто удалился
+            # print(rfe.ranking_)  # порядок удаления features (кто больше, тот раньше ушел)
 
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def select_from_model_features(self, max_features: int, prefit, threshold=-np.inf, inplace=False, test_size=0.25,
-                                   **kwargs):
-        """"""
+    def select_from_model_features(self, max_features: int, threshold=-np.inf, inplace=False, **kwargs):
+        """Выбор важных для классификации признаков"""
         target = self.__get_target(**kwargs)
 
         assert type(max_features) is int, f'{self.assert_sms} type(max_features) is int'
 
+        sfm = SelectFromModel(RandomForestClassifier(), prefit=False, max_features=max_features, threshold=threshold)
         x, y = self.feature_target_split(target=target)
-        x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y,
-                                                            test_size=test_size, shuffle=True, random_state=0)
-        model = RandomForestClassifier().fit(x_train, y_train)
-        sfm = SelectFromModel(model, max_features=max_features, prefit=prefit, threshold=threshold)
-        X_tr = sfm.fit_transform(x_train, y_train)
-        X_t = sfm.transform(x_test)
+        x_reduced = DataFrame(sfm.fit_transform(x, y))
 
-        rf = RandomForestClassifier().fit(X_tr, y_train)
-        rf.score(X_t, y_test)
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = RandomForestClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
 
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def select_sequential_features(self, n_features_to_select: int, direction: str, inplace=False, test_size=0.25,
-                                   **kwargs):
-        """"""
+    def select_sequential_features(self, n_features_to_select: int, direction: str, inplace=False, **kwargs):
+        """Последовательный выбор признаков"""
         target = self.__get_target(**kwargs)
+
         assert type(n_features_to_select) is int, f'{self.assert_sms} type(n_features_to_select) is int'
         assert 1 < n_features_to_select, f'{self.assert_sms} 1 < n_features_to_select'
         assert direction in ("forward", "backward"), f'{self.assert_sms} direction in ("forward", "backward")'
@@ -525,25 +521,32 @@ class DataFrame(pd.DataFrame):
         x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(sfs.fit_transform(x, y))
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
-                                                            test_size=test_size, shuffle=True, random_state=0)
-
-        rf = RandomForestClassifier().fit(x_train, y_train)
-        score = rf.score(x_test, y_test)
-        print(f'score: {score}')
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = RandomForestClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
 
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def balance(self, column_name: str):
+    def balance(self, column_name: str, threshold: int | float):
         """Сбалансированность класса"""
-        assert column_name in self.columns, f'{self.assert_sms} column_name in self.columns'
+        assert column_name in self.columns, f'{self.assert_sms} column_name in {self.columns}'
+        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
+        assert 1 < threshold, f'{self.assert_sms} 1 < threshold'
 
-        len_unique = len(self[column_name].unique())
         df = self.value_counts(column_name).to_frame()
         df['fraction'] = df['count'] / len(self)
-        df['balance'] = df['fraction'] >= 1 / len_unique  # TODO: нужно более мудрое решение
+        df['balance'] = df['count'].max() / df['count'].min() <= threshold
+        '''
+        если отношение количества значений самого многочисленного класса 
+        к количеству значений самого малочисленного класса 
+        меньше или равно threshold раз, то баланс есть
+        '''
         return DataFrame(df)
 
     def pca(self, n_components: int, inplace=False, **kwargs):
