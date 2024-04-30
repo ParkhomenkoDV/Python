@@ -291,7 +291,7 @@ class DataFrame(pd.DataFrame):
                 l1_features = l1_importance.columns[row].to_list()
                 break
         else:
-            l1_features = l1_importance.columns[l1_importance.iloc[-1] != 0].to_list()
+            return l1_importance.columns[l1_importance.iloc[-1] != 0].to_list()
 
         return l1_features
 
@@ -316,8 +316,19 @@ class DataFrame(pd.DataFrame):
         plt.barh(mutual_info_score.index, mutual_info_score)
         plt.show()
 
-    def select_mutual_info_score_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
-        mutual_info_score_features = self.mutual_info_score
+    def select_mutual_info_score_features(self, threshold: int | float, **kwargs) -> list[str]:
+        """Выбор признаков по взаимной информации корреляции"""
+        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
+
+        mutual_info_score_features = self.mutual_info_score(**kwargs)
+
+        if type(threshold) is int:  # количество выбираемых признаков
+            assert 1 <= threshold < len(mutual_info_score_features), \
+                f'{self.assert_sms} 1 <= threshold < {len(mutual_info_score_features)}'
+            return mutual_info_score_features[:threshold].index.to_list()
+        else:  # порог значения признаков
+            assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
+            return mutual_info_score_features[mutual_info_score_features > threshold].index.to_list()
 
     @decorators.try_except('pass')
     def permutation_importance(self, **kwargs):
@@ -340,7 +351,7 @@ class DataFrame(pd.DataFrame):
         plt.barh(s.index, s)
         plt.show()
 
-    def select_permutation_importance_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
+    def select_permutation_importance_features(self, **kwargs) -> list[str]:  # TODO:
         permutation_importance_features = self.permutation_importance
 
     @decorators.try_except('pass')
@@ -364,7 +375,7 @@ class DataFrame(pd.DataFrame):
         plt.barh(s.index, s)
         plt.show()
 
-    def select_importance_features(self) -> list[str]:  # TODO: threshold: float or n_features: int!!!
+    def select_importance_features(self, **kwargs) -> list[str]:  # TODO: threshold: float or n_features: int!!!
         importance_features = self.importance_features
 
     def __select_metric(self, metric: str):
@@ -897,6 +908,11 @@ if __name__ == '__main__':
     target = "Pressure level [db]"
     df.target = target
     print(df)
-    print(df.detect_outliers())
-    print(df.find_corr_features())
-    print(df.encode_one_hot(["Frequency [Hz]"]))
+    # print(df.detect_outliers())
+    # print(df.find_corr_features())
+    # print(df.encode_one_hot(["Frequency [Hz]"]))
+    print(df.mutual_info_score())
+    print(df.select_mutual_info_score_features(4))
+    print(df.select_mutual_info_score_features(2))
+    print(df.select_mutual_info_score_features(1.))
+    print(df.select_mutual_info_score_features(1.5))
