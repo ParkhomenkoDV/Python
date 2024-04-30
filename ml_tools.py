@@ -351,8 +351,18 @@ class DataFrame(pd.DataFrame):
         plt.barh(s.index, s)
         plt.show()
 
-    def select_permutation_importance_features(self, **kwargs) -> list[str]:  # TODO:
-        permutation_importance_features = self.permutation_importance
+    def select_permutation_importance_features(self, threshold: int | float, **kwargs) -> list[str]:
+        """Выбор признаков перемешивающим подходом"""
+        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
+
+        permutation_importance_features = self.permutation_importance(**kwargs)
+        if type(threshold) is int:  # количество выбираемых признаков
+            assert 1 <= threshold < len(permutation_importance_features), \
+                f'{self.assert_sms} 1 <= threshold < {len(permutation_importance_features)}'
+            return permutation_importance_features[:threshold].index.to_list()
+        else:  # порог значения признаков
+            assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
+            return permutation_importance_features[permutation_importance_features > threshold].index.to_list()
 
     @decorators.try_except('pass')
     def importance_features(self, **kwargs):
@@ -911,8 +921,14 @@ if __name__ == '__main__':
     # print(df.detect_outliers())
     # print(df.find_corr_features())
     # print(df.encode_one_hot(["Frequency [Hz]"]))
-    print(df.mutual_info_score())
-    print(df.select_mutual_info_score_features(4))
-    print(df.select_mutual_info_score_features(2))
-    print(df.select_mutual_info_score_features(1.))
-    print(df.select_mutual_info_score_features(1.5))
+    # print(df.mutual_info_score())
+    # print(df.select_mutual_info_score_features(4))
+    # print(df.select_mutual_info_score_features(2))
+    # print(df.select_mutual_info_score_features(1.))
+    # print(df.select_mutual_info_score_features(1.5))
+    # print(df.select_mutual_info_score_features(-1.5))
+    # print(df.mutual_info_score())
+    # print(df.select_mutual_info_score_features(4))
+    # print(df.select_mutual_info_score_features(1))
+    # print(df.select_mutual_info_score_features(1.9))
+    # print(df.select_mutual_info_score_features(50.))
