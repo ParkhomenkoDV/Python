@@ -204,6 +204,7 @@ class DataFrame(pd.DataFrame):
         return DataFrame(outliers)
 
     def outliers(self, nu: float = 0.1):  # TODO: доделать
+        pass
         models = [OneClassSVM(nu=nu),  # nu - % выбросов
                   IsolationForest(),
                   EllipticEnvelope(contamination=0.2),
@@ -628,6 +629,16 @@ class DataFrame(pd.DataFrame):
         g.map_lower(sns.kdeplot, cmap='plasma', n_levels=6, alpha=0.5)
         plt.tight_layout()
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'pairplot'), file_extension='png')
+
+    def jointplot(self, **kwargs):
+        pass
+        '''for i in range(len(data.columns)-1):
+            sns.jointplot(x=data.columns[i], y=data.columns[-1], data=data(), kind='reg')
+            plt.show()'''
+
+        '''for i in range(len(data.columns)-1):
+            sns.jointplot(x=data.columns[i], y=data.columns[-1], data=data(), kind='kde')
+            plt.show()'''
 
     def histplot(self, bins=40, **kwargs):
         self.hist(figsize=kwargs.get('figsize', (12, 12)), bins=bins)
