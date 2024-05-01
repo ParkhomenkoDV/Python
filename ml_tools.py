@@ -415,15 +415,15 @@ class DataFrame(pd.DataFrame):
     def select_k_best_features(self, metric: str, k: int, inplace=False, **kwargs):
         """Выбор k лучших признаков"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
 
         assert type(k) is int, f'{self.assert_sms} type(k) is int'
-        assert 1 <= k <= len(self.columns), f'{self.assert_sms} 1 <= k <= {len(self.columns)}'
+        assert 1 <= k <= len(x.columns), f'{self.assert_sms} 1 <= k <= {len(x.columns)}'
 
         skb = SelectKBest(self.__select_metric(metric), k=k)
-        x, y = self.feature_target_split(target=target)
-        x_reduced = DataFrame(skb.fit_transform(x, y))  # FIXME
+        x_reduced = DataFrame(skb.fit_transform(x, y), columns=x.columns[skb.get_support()])
 
-        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y, # ломает регрессию
                                                             test_size=kwargs.get('test_size', 0.25),
                                                             shuffle=True, random_state=0)
         if kwargs.get('test_size', None):
@@ -434,7 +434,7 @@ class DataFrame(pd.DataFrame):
         if inplace:
             self.__init__(x_reduced)
         else:
-            return x.columns[skb.get_support()]
+            return x.columns[skb.get_support()].to_list()
 
     def select_percentile_features(self, metric: str, percentile: int | float, inplace=False, **kwargs):
         """Выбор указанного процента признаков"""
