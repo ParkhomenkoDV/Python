@@ -293,10 +293,11 @@ class DataFrame(pd.DataFrame):
     def mutual_info_score(self, **kwargs):
         """Взаимная информация корреляции"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
 
         result = dict()
-        for column in self.drop([target], axis=1):
-            result[column] = mutual_info_score(self[column], self[target])
+        for column in x:
+            result[column] = mutual_info_score(x[column], y)
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
         return pd.Series(dict(result))
 
@@ -312,86 +313,89 @@ class DataFrame(pd.DataFrame):
 
     def select_mutual_info_score_features(self, threshold: int | float, **kwargs) -> list[str]:
         """Выбор признаков по взаимной информации корреляции"""
-        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
-
         mutual_info_score_features = self.mutual_info_score(**kwargs)
-
         if type(threshold) is int:  # количество выбираемых признаков
-            assert 1 <= threshold < len(mutual_info_score_features), \
-                f'{self.assert_sms} 1 <= threshold < {len(mutual_info_score_features)}'
+            assert 1 <= threshold <= len(mutual_info_score_features), \
+                f'{self.assert_sms} 1 <= threshold <= {len(mutual_info_score_features)}'
             return mutual_info_score_features[:threshold].index.to_list()
-        else:  # порог значения признаков
+        elif type(threshold) is float:  # порог значения признаков
             assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
             return mutual_info_score_features[mutual_info_score_features > threshold].index.to_list()
+        else:
+            raise Exception(f'{self.assert_sms} type(threshold) in (int, float)')
 
     @decorators.try_except('pass')
     def permutation_importance(self, **kwargs):
-        """Перемешивающий подход"""
+        """Перемешивающий метод"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
 
-        model = RandomForestClassifier()
-        model.fit(self.drop([target], axis=1), self[target])
-        result = permutation_importance(model, self.drop([target], axis=1), self[target])
-        return pd.Series(result['importances_mean'], index=self.columns[:-1]).sort_values(ascending=False)
+        model = RandomForestClassifier().fit(x, y)
+        result = permutation_importance(model, x, y)
+        return pd.Series(result['importances_mean'], index=x.columns).sort_values(ascending=False)
 
     def permutation_importance_plot(self, **kwargs):
-        """Перемешивающий подход на столбчатой диаграмме"""
-        target = self.__get_target(**kwargs)
+        """Перемешивающий метод на столбчатой диаграмме"""
+        permutation_importance = self.permutation_importance(**kwargs)
+        if permutation_importance is None: return
+        permutation_importance.sort_values(ascending=True, inplace=True)
 
-        s = self.permutation_importance(target=target).sort_values(ascending=True)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
-        plt.barh(s.index, s)
+        plt.barh(permutation_importance.index, permutation_importance)
         plt.show()
 
     def select_permutation_importance_features(self, threshold: int | float, **kwargs) -> list[str]:
-        """Выбор признаков перемешивающим подходом"""
-        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
-
+        """Выбор признаков перемешивающим методом"""
         permutation_importance_features = self.permutation_importance(**kwargs)
+        if permutation_importance_features is None: return list()
         if type(threshold) is int:  # количество выбираемых признаков
             assert 1 <= threshold < len(permutation_importance_features), \
                 f'{self.assert_sms} 1 <= threshold < {len(permutation_importance_features)}'
             return permutation_importance_features[:threshold].index.to_list()
-        else:  # порог значения признаков
+        elif type(threshold) is float:  # порог значения признаков
             assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
             return permutation_importance_features[permutation_importance_features > threshold].index.to_list()
+        else:
+            raise Exception(f'{self.assert_sms} type(threshold) in (int, float)')
 
     @decorators.try_except('pass')
     def importance_features(self, **kwargs):
         """Важные признаки для классификации"""
         target = self.__get_target(**kwargs)
-
         x, y = self.feature_target_split(target=target)
         model = RandomForestClassifier().fit(x, y)
-        return pd.Series(model.feature_importances_, index=self.columns[:-1]).sort_values(ascending=False)
+        return pd.Series(model.feature_importances_, index=x.columns).sort_values(ascending=False)
 
     @decorators.try_except('pass')
     def importance_features_plot(self, **kwargs):
         """Важные признаки для классификации на столбчатой диаграмме"""
         target = self.__get_target(**kwargs)
 
-        s = self.importance_features(target=target).sort_values(ascending=True)
+        importance_features = self.importance_features(target=target)
+        if not importance_features: return
+        importance_features.sort_values(ascending=True, inplace=True)
+
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.xlabel('importance')
         plt.ylabel('features')
-        plt.barh(s.index, s)
+        plt.barh(importance_features.index, importance_features)
         plt.show()
 
     def select_importance_features(self, threshold: int | float, **kwargs) -> list[str]:
         """Выбор важных признаков для классификации"""
-        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
-
         importance_features = self.importance_features(**kwargs)
-        if not importance_features: return list()
+        if importance_features is None: return list()
         if type(threshold) is int:  # количество выбираемых признаков
             assert 1 <= threshold < len(importance_features), \
                 f'{self.assert_sms} 1 <= threshold < {len(importance_features)}'
             return importance_features[:threshold].index.to_list()
-        else:  # порог значения признаков
+        elif type(threshold) is float:  # порог значения признаков
             assert 0 < threshold, f'{self.assert_sms} 0 < threshold'
             return importance_features[importance_features > threshold].index.to_list()
+        else:
+            raise Exception(f'{self.assert_sms} type(threshold) in (int, float)')
 
     def __select_metric(self, metric: str):
         """Вспомогательная функция к выбору метрики"""
@@ -417,7 +421,7 @@ class DataFrame(pd.DataFrame):
 
         skb = SelectKBest(self.__select_metric(metric), k=k)
         x, y = self.feature_target_split(target=target)
-        x_reduced = DataFrame(skb.fit_transform(x, y))
+        x_reduced = DataFrame(skb.fit_transform(x, y))  # FIXME
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y, stratify=y,
                                                             test_size=kwargs.get('test_size', 0.25),
