@@ -570,6 +570,7 @@ class DataFrame(pd.DataFrame):
         '''
         return DataFrame(df)
 
+    @decorators.try_except('pass')
     def pca(self, n_components: int, inplace=False, **kwargs):
         """Метод главный компонент для линейно-зависимых признаков"""
         target = self.__get_target(**kwargs)
@@ -582,40 +583,64 @@ class DataFrame(pd.DataFrame):
         pca = PrincipalComponentAnalysis(n_components=n_components)
         x_reduced = DataFrame(pca.fit_transform(x, y))
         print(f'Объем сохраненной и потерянной информации: {pca.explained_variance_ratio_}')  # потеря до 20% приемлема
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
+
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
+    @decorators.try_except('pass')
     def lda(self, n_components: int, inplace=False, **kwargs):
         """Линейно дискриминантный анализ для линейно-зависимых признаков"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
         assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
-        assert n_components <= min(len(x.columns), len(y.unique())), \
-            f'n_components <= {min(len(x.columns), len(y.unique()))}'
+        assert 1 <= n_components <= min(len(x.columns), len(y.unique()) - 1), \
+            f'1 <= n_components <= {min(len(x.columns), len(y.unique()) - 1)}'
 
         lda = LinearDiscriminantAnalysis(n_components=n_components)
         x_reduced = DataFrame(lda.fit_transform(x, y))
-        print(f'Объем потерянной и сохраненной информации: {lda.explained_variance_ratio_}')  # потеря до 20% приемлема
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
+
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
+    @decorators.try_except('pass')
     def nca(self, n_components: int, inplace=False, **kwargs):
         """Анализ компонентов соседств для нелинейных признаков"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
         assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
-        assert n_components <= min(len(x.columns), len(y.unique())), \
-            f'n_components <= {min(len(x.columns), len(y.unique()))}'
+        assert 1 <= n_components <= min(len(x.columns), len(y.unique())), \
+            f'1 <= n_components <= {min(len(x.columns), len(y.unique()))}'
 
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
         x_reduced = DataFrame(nca.fit_transform(x, y))
-        print(f'Объем потерянной и сохраненной информации: {nca.explained_variance_ratio_}')  # потеря до 20% приемлема
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
+
         if inplace:
             self.__init__(x_reduced)
         else:
