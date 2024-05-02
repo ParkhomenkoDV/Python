@@ -573,48 +573,32 @@ class DataFrame(pd.DataFrame):
     def pca(self, n_components: int, inplace=False, **kwargs):
         """Метод главный компонент для линейно-зависимых признаков"""
         target = self.__get_target(**kwargs)
-        assert n_components <= min(len(self.columns), len(self[target].unique())), \
-            'n_components <= min(len(self.columns), len(self[target].unique()))'
+        x, y = self.feature_target_split(target=target)
+
+        assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
+        assert 1 <= n_components <= min(len(x.columns), len(y.unique())), \
+            f'1 <= n_components <= {min(len(x.columns), len(y.unique()))}'
 
         pca = PrincipalComponentAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(pca.fit_transform(x, y))
-        evr = pca.explained_variance_ratio_  # потеря до 20% приемлема
-        print(f'Объем потерянной и сохраненной информации: {evr}')
+        print(f'Объем сохраненной и потерянной информации: {pca.explained_variance_ratio_}')  # потеря до 20% приемлема
         if inplace:
             self.__init__(x_reduced)
         else:
             return x_reduced
 
-    def pcaplot(self, n_components: int, **kwargs):  # TODO: разобраться
-        """"""
-        target = self.__get_target(**kwargs)
-
-        x_reduced = self.pca(n_components, target=target).to_numpy()
-
-        fg = plt.figure(figsize=(12, 6))
-        gs = fg.add_gridspec(1, 2)
-
-        fg.add_subplot(gs[0, 0])
-        plt.scatter(x_reduced[:, 0], x_reduced[:, 1], c=self[target], s=30, cmap='Set1')
-        plt.grid(True)
-
-        fg.add_subplot(gs[0, 1])
-        sns.histplot(x=list(x_reduced.reshape(1, -1)[0]),
-                     # hue=self[target],
-                     element="poly")
-        plt.grid(True)
-
-        plt.show()
-
     def lda(self, n_components: int, inplace=False, **kwargs):
         """Линейно дискриминантный анализ для линейно-зависимых признаков"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
+        assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
+        assert n_components <= min(len(x.columns), len(y.unique())), \
+            f'n_components <= {min(len(x.columns), len(y.unique()))}'
 
         lda = LinearDiscriminantAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(lda.fit_transform(x, y))
-
+        print(f'Объем потерянной и сохраненной информации: {lda.explained_variance_ratio_}')  # потеря до 20% приемлема
         if inplace:
             self.__init__(x_reduced)
         else:
@@ -623,11 +607,15 @@ class DataFrame(pd.DataFrame):
     def nca(self, n_components: int, inplace=False, **kwargs):
         """Анализ компонентов соседств для нелинейных признаков"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
+        assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
+        assert n_components <= min(len(x.columns), len(y.unique())), \
+            f'n_components <= {min(len(x.columns), len(y.unique()))}'
 
         nca = NeighborhoodComponentsAnalysis(n_components=n_components)
-        x, y = self.feature_target_split(target=target)
         x_reduced = DataFrame(nca.fit_transform(x, y))
-
+        print(f'Объем потерянной и сохраненной информации: {nca.explained_variance_ratio_}')  # потеря до 20% приемлема
         if inplace:
             self.__init__(x_reduced)
         else:
