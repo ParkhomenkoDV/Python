@@ -36,53 +36,76 @@ from colorama import Fore
 
 
 def logger(function):
-    """Регистрация начала и окончания выполнения ф-и"""
+    """Регистрация начала и окончания выполнения функции"""
 
     @wraps(function)
     def wrapper(*args, **kwargs):
         """wrapper documentation"""
-        print(f"----- {function.__name__}: start -----")
+        print(f"{function.__name__}: start")
         result = function(*args, **kwargs)
-        print(f"----- {function.__name__}: end -----")
+        print(f"{function.__name__}: end")
         return result
 
     return wrapper
 
 
-def ignore_warnings(function):
-    """Игнорирование предупреждений"""
+def warns(action: str):
+    """Обработка предупреждений: пропуск, игнорирование, исключение, печать"""
 
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-        warnings.filterwarnings('ignore')
-        result = function(*args, **kwargs)
-        warnings.filterwarnings('default')
-        return result
+    assert type(action) is str, 'type(action) is str'
+    action = action.strip().lower()
 
-    return wrapper
+    def decor(function):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+
+            if action == 'pass':
+                result = function(*args, **kwargs)
+                return result
+
+            elif action == 'ignore':
+                warnings.filterwarnings('ignore')
+                result = function(*args, **kwargs)
+                warnings.filterwarnings('default')
+                return result
+
+            elif action == 'raise':
+                warnings.filterwarnings('error')
+                result = function(*args, **kwargs)
+                warnings.filterwarnings('default')
+                return result
+
+            else:
+                print(action)
+                result = function(*args, **kwargs)
+                return result
+
+        return wrapper
+
+    return decor
 
 
-def try_except(order: str = 'pass'):
+def try_except(action: str = 'pass'):
     """Обработка исключений"""
 
-    assert type(order) is str, 'type(order) is str'
-    order = order.strip().lower()
-    assert order in ("pass", "raise"), 'order in ("pass", "raise")'
+    assert type(action) is str, 'type(action) is str'
+    action = action.strip().lower()
+    assert action in ("pass", "raise"), 'action in ("pass", "raise")'
 
-    def decorate(function):
+    def decor(function):
         @wraps(function)
         def wrapper(*args, **kwargs):
             try:
                 return function(*args, **kwargs)
             except Exception as exception:
-                if order == 'raise':
+                if action == 'raise':
                     raise exception
                 else:
                     print(exception)
 
         return wrapper
 
-    return decorate
+    return decor
 
 
 def timeit(rnd=4):
@@ -137,7 +160,7 @@ def countcall(function):
 def repeat(number_of_times: int):
     """Вызов ф-и несколько раз подряд"""
 
-    def decorate(function):
+    def decor(function):
         @wraps(function)
         def wrapper(*args, **kwargs):
             res = [None] * number_of_times
@@ -147,13 +170,13 @@ def repeat(number_of_times: int):
 
         return wrapper
 
-    return decorate
+    return decor
 
 
 def retry(num_retries, exception_to_check, sleep_time=0):
     """Заставляет функцию, которая сталкивается с исключением, совершить несколько повторных попыток"""
 
-    def decorate(func):
+    def decor(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             for i in range(1, num_retries + 1):
@@ -168,14 +191,14 @@ def retry(num_retries, exception_to_check, sleep_time=0):
 
         return wrapper
 
-    return decorate
+    return decor
 
 
 def rate_limited(max_per_second):
     """Ограничивает частоту вызова функции"""
     min_interval = 1.0 / float(max_per_second)
 
-    def decorate(function):
+    def decor(function):
         last_time_called = [0.0]
 
         @wraps(function)
@@ -189,7 +212,7 @@ def rate_limited(max_per_second):
 
         return wrapper
 
-    return decorate
+    return decor
 
 
 """
