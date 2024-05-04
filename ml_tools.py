@@ -15,6 +15,8 @@ import seaborn as sns
 
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, TargetEncoder
 
+from sklearn.preprocessing import PolynomialFeatures
+
 from sklearn.preprocessing import (Normalizer,
                                    StandardScaler, MinMaxScaler, MaxAbsScaler,
                                    RobustScaler, QuantileTransformer, PowerTransformer)
@@ -182,7 +184,16 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
+    def polynomial_features(self, n: int, include_bias=True):
+        """"""
+        assert type(n) is int, 'type(n) is int'
+        assert n > 1, 'n > 1'
+        assert type(include_bias) is bool, 'type(include_bias) is bool'
+
+        PolynomialFeatures(n, include_bias=include_bias)
+
     def detect_outliers(self, method: str = '3sigma'):
+        """Обнаружение выбросов статистическим методом"""
         assert type(self) is DataFrame, f'{self.assert_sms} type(df) is DataFrame'
         assert type(method) is str, f'{self.assert_sms} type(method) is str'
         method = method.strip().lower()
@@ -203,14 +214,20 @@ class DataFrame(pd.DataFrame):
             outliers = pd.concat([outliers, col_outliers])
         return DataFrame(outliers)
 
-    def outliers(self, nu: float = 0.1):  # TODO: доделать
-        pass
+    def detect_model_outliers(self, nu: float = 0.1, **kwargs):  # TODO: доделать
+        """Обнаружение выбросов модельным методом"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
         models = [OneClassSVM(nu=nu),  # nu - % выбросов
                   IsolationForest(),
                   EllipticEnvelope(contamination=0.2),
-                  LocalOutlierFactor(novelty=True)]
-        for i, model in enumerate(models):
-            model.fit(self)
+                  LocalOutlierFactor(novelty=True),  # для новых данных
+                  ]
+        for model in models:
+            model.fit(x)
+
+        df = DataFrame(model)
 
     def select_corr_features(self, threshold: float = 0.85) -> list[str]:
         """Выбор линейно-независимых признаков"""
@@ -247,9 +264,9 @@ class DataFrame(pd.DataFrame):
                       **kwargs):
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
 
         l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
-        x, y = self.feature_target_split(target=target)
         df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=x.columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
@@ -289,7 +306,7 @@ class DataFrame(pd.DataFrame):
 
         return l1_features
 
-    @decorators.ignore_warnings
+    @decorators.warns('ignore')
     def mutual_info_score(self, **kwargs):
         """Взаимная информация корреляции"""
         target = self.__get_target(**kwargs)
