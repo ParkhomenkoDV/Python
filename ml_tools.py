@@ -587,6 +587,16 @@ class DataFrame(pd.DataFrame):
         '''
         return DataFrame(df)
 
+    def undersampling(self):
+        """"""
+        # Tomek Links
+        pass
+
+    def oversampling(self):
+        """"""
+        # SMOTE
+        pass
+
     @decorators.try_except('pass')
     def pca(self, n_components: int, inplace=False, **kwargs):
         """Метод главный компонент для линейно-зависимых признаков"""
