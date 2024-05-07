@@ -1,0 +1,27 @@
+# просмотр версии python
+python -V
+
+pip install jupyterlab jupyter
+pip install numpy scipy sympy 
+pip install pyspark pandas pyarrow polars openpyxl polars
+pip install accessify deprecated memory_profiler
+pip install matplotlib colorama tqdm pyinstaller
+pip install pygame
+pip install mendeleev
+pip install keyboard
+pip install requests
+pip install deepface opencv-python
+pip install scikit-learn scikit-image
+pip install tensorflow  pydot
+pip install neat-python
+
+# просмотр всех доступных обновлений
+pip list -o
+
+# обновление конкретного пакета
+pip install <имя пакета> -U
+pip install <имя пакета> --upgrade
+
+# обновление всех пакетов на Linux
+for i in $(pip list -o | awk 'NR > 2 {print $1}'); do sudo pip install -U $i; done
+sudo pip install -U $(pip freeze | awk '{split($0, a, '=='); print a[1]}')
