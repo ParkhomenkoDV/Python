@@ -96,8 +96,6 @@ def img_show(img, title='image', figsize=(12, 12)):
 class DataFrame(pd.DataFrame):
     """Расширенный класс pandas.DataFrame"""
 
-    assert_sms = 'Incorrect assert:'
-
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
         self.__target = ''
@@ -184,13 +182,19 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def polynomial_features(self, n: int, include_bias=True):
-        """"""
-        assert type(n) is int, 'type(n) is int'
-        assert n > 1, 'n > 1'
+    def polynomial_features(self, columns: list, degree: int, include_bias=False):
+        """Полиномирование признаков"""
+
+        assert type(columns) is list, 'type(columns) is list'
+        assert len(columns) > 0, 'len(columns) > 0'
+        assert all(map(lambda col: col in self.columns, columns)), 'all(map(lambda col: col in self.columns, columns))'
+        assert type(degree) is int, 'type(degree) is int'
+        assert degree > 1, 'degree > 1'
         assert type(include_bias) is bool, 'type(include_bias) is bool'
 
-        PolynomialFeatures(n, include_bias=include_bias)
+        pf = PolynomialFeatures(degree=degree, include_bias=include_bias)
+        df = DataFrame(pf.fit_transform(self[columns]), columns=pf.get_feature_names_out())
+        return df
 
     def detect_outliers(self, method: str = '3sigma'):
         """Обнаружение выбросов статистическим методом"""
@@ -726,13 +730,8 @@ class DataFrame(pd.DataFrame):
 
 
 class Model:
-    LINEAR_MODEL_CLASSIFIERS = [SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
-                                PassiveAggressiveClassifier]
-    LINEAR_MODEL_REGRESSORS = [LinearRegression, Ridge, Lasso, ElasticNet, Lars, LassoLars,
-                               OrthogonalMatchingPursuit,
-                               BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
-                               PoissonRegressor, HuberRegressor,
-                               TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor]
+    """Базовый класс модели"""
+
     NEIGHBORS = [NearestNeighbors, KNeighborsClassifier, KNeighborsRegressor,
                  RadiusNeighborsClassifier, RadiusNeighborsRegressor]
     TREE_CLASSIFIERS = [DecisionTreeClassifier, ExtraTreeClassifier]
@@ -744,23 +743,9 @@ class Model:
                            GradientBoostingRegressor, AdaBoostRegressor, HistGradientBoostingRegressor,
                            StackingRegressor, VotingRegressor]
 
-    ALL_MODELS = (LINEAR_MODEL_CLASSIFIERS + LINEAR_MODEL_REGRESSORS +
-                  NEIGHBORS +
+    ALL_MODELS = (NEIGHBORS +
                   TREE_CLASSIFIERS + TREE_REGRESSORS +
                   ENSEMBLE_CLASSIFIERS + ENSEMBLE_REGRESSORS)
-
-    ALL_ERRORS = [mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
-                  coverage_error,
-                  mean_absolute_percentage_error, median_absolute_error,
-                  mean_squared_log_error, root_mean_squared_log_error]
-
-    ALL_SCORES = [accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, r2_score,
-                  d2_absolute_error_score, ndcg_score, rand_score, dcg_score, fbeta_score,
-                  adjusted_rand_score, silhouette_score, completeness_score, homogeneity_score,
-                  jaccard_score, consensus_score, v_measure_score, brier_score_loss, d2_tweedie_score,
-                  cohen_kappa_score, d2_pinball_score, mutual_info_score, adjusted_mutual_info_score,
-                  average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
-                  top_k_accuracy_score, calinski_harabasz_score]
 
     def __init__(self, model=None):
 
@@ -904,8 +889,34 @@ class Model:
         cmd.plot()
         plt.show()
 
+    def save(self, path: str) -> None:
+        pickle.dump(self.__model, open(path, 'wb'))
+
+    def load(self, path: str):
+        self.__model = pickle.load(open(path, 'rb'))
+        return self
+
+
+class Classifier(Model):
+    """Модель классификатора"""
+    LINEAR_MODEL_CLASSIFIERS = [SGDClassifier, SGDOneClassSVM, RidgeClassifier, RidgeClassifierCV,
+                                PassiveAggressiveClassifier]
+    TREE_CLASSIFIERS = [DecisionTreeClassifier, ExtraTreeClassifier]
+    MODELS = ()
+
+    ALL_SCORES = [accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, r2_score,
+                  d2_absolute_error_score, ndcg_score, rand_score, dcg_score, fbeta_score,
+                  adjusted_rand_score, silhouette_score, completeness_score, homogeneity_score,
+                  jaccard_score, consensus_score, v_measure_score, brier_score_loss, d2_tweedie_score,
+                  cohen_kappa_score, d2_pinball_score, mutual_info_score, adjusted_mutual_info_score,
+                  average_precision_score, label_ranking_average_precision_score, balanced_accuracy_score,
+                  top_k_accuracy_score, calinski_harabasz_score]
+
+    def __init__(self, *args, **kwargs):
+        super(Model, self).__init__(*args, **kwargs)
+
     def precision_recall_curve(self, y_true, y_predicted, **kwargs):
-        """График PR"""
+        """График precision-recall"""
         precision, recall, threshold = precision_recall_curve(y_true, y_predicted)
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
         plt.title(kwargs.get('title', 'precision recall curve'), fontsize=16, fontweight='bold')
@@ -936,12 +947,30 @@ class Model:
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'roc curve'), file_extension='png')
         plt.show()
 
-    def save(self, path: str) -> None:
-        pickle.dump(self.__model, open(path, 'wb'))
 
-    def load(self, path: str):
-        self.__model = pickle.load(open(path, 'rb'))
-        return self
+class Regressor(Model):
+    MODELS = ()
+
+    LINEAR_MODEL_REGRESSORS = [LinearRegression, Ridge, Lasso, ElasticNet, Lars, LassoLars,
+                               OrthogonalMatchingPursuit,
+                               BayesianRidge, ARDRegression, SGDRegressor, RANSACRegressor, GammaRegressor,
+                               PoissonRegressor, HuberRegressor,
+                               TweedieRegressor, LogisticRegression, QuantileRegressor, TheilSenRegressor]
+
+    ALL_ERRORS = [mean_absolute_error, mean_squared_error, root_mean_squared_error, max_error,
+                  coverage_error,
+                  mean_absolute_percentage_error, median_absolute_error,
+                  mean_squared_log_error, root_mean_squared_log_error]
+
+    def __init__(self, *args, **kwargs):
+        super(Model, self).__init__(*args, **kwargs)
+
+
+class Clusterizer(Model):
+    MODELS = (DBSCAN,)
+
+    def __init__(self, *args, **kwargs):
+        super(Model, self).__init__(*args, **kwargs)
 
 
 def classifier_or_regressor(model) -> str:
@@ -1003,6 +1032,15 @@ if __name__ == '__main__':
     target = "Pressure level [db]"
     df.target = target
     print(df)
+    print('----------------')
+    print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
+    print('----------------')
+    print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
+    print('----------------')
+    print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
+    print('----------------')
+    print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
+
     # print(df.detect_outliers())
     # print(df.find_corr_features())
     # print(df.encode_one_hot(["Frequency [Hz]"]))
