@@ -1,4 +1,5 @@
 *.mp4
+
 DS/
 SQLite/
 ML/
@@ -8,6 +9,7 @@ Flask/
 Нейросети на Python/
 Добрый Python ООП/
 ЦОС/
+pyspark/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
