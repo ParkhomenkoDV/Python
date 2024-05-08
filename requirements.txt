@@ -12,7 +12,7 @@ pip install keyboard
 pip install requests
 pip install deepface opencv-python
 pip install scikit-learn scikit-image
-pip install tensorflow  pydot
+pip install tensorflow torch pydot
 pip install neat-python
 
 # просмотр всех доступных обновлений
