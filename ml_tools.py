@@ -218,14 +218,13 @@ class DataFrame(pd.DataFrame):
             outliers = pd.concat([outliers, col_outliers])
         return DataFrame(outliers).sort_index().drop_duplicates()
 
-    # @decorators.warns('ignore')
     def detect_model_outliers(self, fraction: float, threshold=0.5, **kwargs):
         """Обнаружение выбросов модельным методом"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
         assert type(fraction) is float, 'type(fraction) is float'
-        assert 0 < fraction < 1, '0 < fraction < 1'
+        assert 0 < fraction <= 0.5, '0 < fraction <= 0.5'  # 'contamination' param EllipticEnvelope in (0.0, 0.5]
         assert type(threshold) is float, 'type(threshold) is float'
 
         models = [OneClassSVM(nu=fraction),  # fraction - доля выбросов
@@ -235,16 +234,17 @@ class DataFrame(pd.DataFrame):
 
         outliers = DataFrame()
         for model in models:  # для каждой модели
-            model.fit(x.values, y)  # обучаем
-            pred = model.predict(x.values)  # предсказываем
-            pred[pred == -1] = False  # выбросы (=-1) переименуем в False
+            model.fit(x.values, y)  # обучаем (.values необходим для анонимности данных)
+            pred = model.predict(x.values)  # предсказываем (.values необходим для анонимности данных)
+            pred[pred == -1] = False  # выбросы (=-1) переименуем в False (=0)
             pred = DataFrame(pred, columns=[model.__class__.__name__])  # создаем DataFrame
             outliers = pd.concat([outliers, pred], axis=1)  # конкатезируем выбросы по данной модели
 
-        # вероятность выброса определяется как среднее арифметическое предсказаний всех моделей
+        # вероятность НЕ выброса (адекватных данных) определяется как среднее арифметическое предсказаний всех моделей
         outliers['probability'] = outliers.apply(lambda row: row.mean(), axis=1)
-        outliers['outlier'] = outliers['probability'] < threshold  # если вероятность < порога
-        return self[outliers['outlier']]
+        # выброс считается, когда вероятность адекватных данных < 1 - порог вероятности выброса
+        outliers['outlier'] = outliers['probability'] < (1 - threshold)
+        return self[outliers['outlier']].sort_index()
 
     def select_corr_features(self, threshold: float = 0.85) -> list[str]:
         """Выбор линейно-независимых признаков"""
