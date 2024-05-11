@@ -1,8 +1,9 @@
 import sys
 import os
 from tqdm import tqdm
-import pickle
 import warnings
+import pickle
+import joblib
 
 import multiprocessing as mp
 import threading as th
@@ -85,7 +86,7 @@ from tools import isiter, export2
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
 
-def img_show(img, title='image', figsize=(12, 12)):
+def imshow(img, title='image', figsize=(12, 12)):
     plt.figure(figsize=figsize)
     plt.imshow(img.numpy().astype("uint8"))
     plt.title(title)
@@ -98,7 +99,7 @@ class DataFrame(pd.DataFrame):
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
-        self.__target = ''
+        self.__target = ''  # имя целевой колонки
 
     @property
     def target(self) -> str:
@@ -198,7 +199,6 @@ class DataFrame(pd.DataFrame):
 
     def detect_outliers(self, method: str = '3sigma'):
         """Обнаружение выбросов статистическим методом"""
-        assert type(self) is DataFrame, f'{self.assert_sms} type(df) is DataFrame'
         assert type(method) is str, f'{self.assert_sms} type(method) is str'
         method = method.strip().lower()
         assert method in ('3sigma', 'tukey'), f'{self.assert_sms} method in ("3sigma", "Tukey")!'
@@ -216,22 +216,35 @@ class DataFrame(pd.DataFrame):
                 lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
             col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
             outliers = pd.concat([outliers, col_outliers])
-        return DataFrame(outliers)
+        return DataFrame(outliers).sort_index().drop_duplicates()
 
-    def detect_model_outliers(self, nu: float = 0.1, **kwargs):  # TODO: доделать
+    # @decorators.warns('ignore')
+    def detect_model_outliers(self, fraction: float, threshold=0.5, **kwargs):
         """Обнаружение выбросов модельным методом"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
-        models = [OneClassSVM(nu=nu),  # nu - % выбросов
-                  IsolationForest(),
-                  EllipticEnvelope(contamination=0.2),
-                  LocalOutlierFactor(novelty=True),  # для новых данных
-                  ]
-        for model in models:
-            model.fit(x)
+        assert type(fraction) is float, 'type(fraction) is float'
+        assert 0 < fraction < 1, '0 < fraction < 1'
+        assert type(threshold) is float, 'type(threshold) is float'
 
-        df = DataFrame(model)
+        models = [OneClassSVM(nu=fraction),  # fraction - доля выбросов
+                  IsolationForest(),
+                  EllipticEnvelope(contamination=fraction),  # fraction - доля выбросов
+                  LocalOutlierFactor(novelty=True)]  # для новых данных
+
+        outliers = DataFrame()
+        for model in models:  # для каждой модели
+            model.fit(x.values, y)  # обучаем
+            pred = model.predict(x.values)  # предсказываем
+            pred[pred == -1] = False  # выбросы (=-1) переименуем в False
+            pred = DataFrame(pred, columns=[model.__class__.__name__])  # создаем DataFrame
+            outliers = pd.concat([outliers, pred], axis=1)  # конкатезируем выбросы по данной модели
+
+        # вероятность выброса определяется как среднее арифметическое предсказаний всех моделей
+        outliers['probability'] = outliers.apply(lambda row: row.mean(), axis=1)
+        outliers['outlier'] = outliers['probability'] < threshold  # если вероятность < порога
+        return self[outliers['outlier']]
 
     def select_corr_features(self, threshold: float = 0.85) -> list[str]:
         """Выбор линейно-независимых признаков"""
@@ -730,7 +743,7 @@ class DataFrame(pd.DataFrame):
 
 
 class Model:
-    """Базовый класс модели"""
+    """Абстрактный класс модели"""
 
     NEIGHBORS = [NearestNeighbors, KNeighborsClassifier, KNeighborsRegressor,
                  RadiusNeighborsClassifier, RadiusNeighborsRegressor]
@@ -749,15 +762,13 @@ class Model:
 
     def __init__(self, model=None):
 
-        assert_sms = 'Incorrect assert:'
-
         if not model:
             self.__model = None
 
         elif type(model) is str:
             model = model.strip().replace('()', '')
             assert model in (class_model.__name__ for class_model in self.ALL_MODELS), \
-                f'{assert_sms} model in {[class_model.__name__ for class_model in self.ALL_MODELS]}'
+                f'model in {[class_model.__name__ for class_model in self.ALL_MODELS]}'
 
             self.__model = next((class_model() for class_model in self.ALL_MODELS if model == class_model.__name__),
                                 None)
@@ -767,7 +778,7 @@ class Model:
 
         else:
             raise AssertionError(
-                f'{assert_sms} type(model) in {[str.__name__] + [class_model.__name__ for class_model in self.ALL_MODELS]}')
+                f'type(model) in {[str.__name__] + [class_model.__name__ for class_model in self.ALL_MODELS]}')
 
     def __call__(self):
         return self.__model
@@ -876,24 +887,28 @@ class Model:
                 if exceptions: print(e)
         return scores
 
-    def confusion_matrix(self, y_true, y_predicted):
-        """Матрица путаницы"""
-        return confusion_matrix(y_true, y_predicted, labels=self.__model.classes_)
+    def save(self, path: str, method: str = 'pickle') -> None:
+        """Сохранение модели"""
+        assert type(method) is str, 'type(method) is str'
+        method = method.strip().lower()
+        assert method in ("pickle", "joblib"), 'method in ("pickle", "joblib")'
 
-    def confusion_matrix_plot(self, y_true, y_predicted, title='confusion_matrix', **kwargs):
-        """График матрицы путаницы"""
-        cm = self.confusion_matrix(y_true, y_predicted)
-        cmd = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.__model.classes_)
-        # plt.figure(figsize=kwargs.get('figsize', (12, 12)))
-        # plt.title(title, fontsize=16, fontweight='bold')
-        cmd.plot()
-        plt.show()
+        if method == 'pickle':
+            pickle.dump(self.__model, open(path, 'wb'))
+        elif method == 'joblib':
+            joblib.dump(self.__model, open(path, 'wb'))
 
-    def save(self, path: str) -> None:
-        pickle.dump(self.__model, open(path, 'wb'))
+    def load(self, path: str, method: str = 'pickle'):
+        """Загрузка модели"""
+        assert type(method) is str, 'type(method) is str'
+        method = method.strip().lower()
+        assert method in ("pickle", "joblib"), 'method in ("pickle", "joblib")'
 
-    def load(self, path: str):
-        self.__model = pickle.load(open(path, 'rb'))
+        if method == 'pickle':
+            self.__model = pickle.load(open(path, 'rb'))
+        elif method == 'joblib':
+            self.__model = joblib.load(open(path, 'rb'))
+
         return self
 
 
@@ -913,7 +928,20 @@ class Classifier(Model):
                   top_k_accuracy_score, calinski_harabasz_score]
 
     def __init__(self, *args, **kwargs):
-        super(Model, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
+
+    def confusion_matrix(self, y_true, y_predicted):
+        """Матрица путаницы"""
+        return confusion_matrix(y_true, y_predicted, labels=self.__model.classes_)
+
+    def confusion_matrix_plot(self, y_true, y_predicted, title='confusion_matrix', **kwargs):
+        """График матрицы путаницы"""
+        cm = self.confusion_matrix(y_true, y_predicted)
+        cmd = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=self.__model.classes_)
+        # plt.figure(figsize=kwargs.get('figsize', (12, 12)))
+        # plt.title(title, fontsize=16, fontweight='bold')
+        cmd.plot()
+        plt.show()
 
     def precision_recall_curve(self, y_true, y_predicted, **kwargs):
         """График precision-recall"""
@@ -1060,3 +1088,4 @@ if __name__ == '__main__':
     # print(df.select_importance_features(1))
     # print(df.select_importance_features(1.9))
     # print(df.select_importance_features(50.))
+    model = Classifier(DecisionTreeClassifier())
