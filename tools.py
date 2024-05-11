@@ -70,6 +70,15 @@ def derivative(f, a, method='central', dx=0.01):
         raise ValueError('Method must be "central", "forward" or "backward"!')
 
 
+def imshow(img, **kwargs):
+    """Демонстрация изображения при помощи matplotlib"""
+    plt.figure(figsize=kwargs.get('figsize', (12, 12)))
+    plt.imshow(img.numpy().astype("uint8"))
+    plt.title(kwargs.get('title', 'image'))
+    plt.axis("off")
+    plt.show()
+
+
 def smoothing(x, y):
     p = np.poly1d(np.polyfit(x, y, 3))
     y_smooth = p(x)

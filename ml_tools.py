@@ -86,12 +86,7 @@ from tools import isiter, export2
 SCALERS = (Normalizer, StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, QuantileTransformer, PowerTransformer)
 
 
-def imshow(img, title='image', figsize=(12, 12)):
-    plt.figure(figsize=figsize)
-    plt.imshow(img.numpy().astype("uint8"))
-    plt.title(title)
-    plt.axis("off")
-    plt.show()
+
 
 
 class DataFrame(pd.DataFrame):
