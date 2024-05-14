@@ -50,3 +50,9 @@ def predictions_plot(y_true, y_predict, figsize=(12, 9), bins=40, savefig=False)
     plt.ylabel('Predictions', fontsize=12)
     if savefig: export2(plt, file_name='predictions_plot', file_extension='png')
     plt.show()
+
+
+class NeuralNetwork:
+
+    def predict(self):
+        pass

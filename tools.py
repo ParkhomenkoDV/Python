@@ -38,7 +38,7 @@ def find(name: str, path: str = os.getcwd()) -> list[str]:
     return result
 
 
-def derivative(f, a, method='central', dx=0.01):
+def derivative(f, a: int | float, method: str = 'central', dx: float = 0.01):
     """Compute the difference formula for f'(a) with step size h.
 
     Parameters
