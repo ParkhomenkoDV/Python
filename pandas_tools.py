@@ -159,7 +159,7 @@ class DataFrame(pd.DataFrame):
         return df
 
     def __assert_vectorize(self, **kwargs):
-        """Проверка на верность ввода в векторизатор"""
+        """Проверка параметров векторизации"""
 
         # кодировка
         encoding = kwargs.get('encoding', 'utf-8')
@@ -783,10 +783,37 @@ class DataFrame(pd.DataFrame):
         target = self.__get_target(**kwargs)
         return self.drop([target], axis=1), self[target]
 
-    def train_test_split(self, test_size, shuffle=True, random_state=0):
+    def __assert_split(self, **kwargs) -> None:
+        """Проверка параметров разбиения"""
+
+        test_size = kwargs.get('test_size', None)
+        assert type(test_size) in (float, int), 'type(test_size) in (float, int)'
+
+        random_state = kwargs.get('random_state', None)
+        assert random_state is None or type(random_state) is int, 'random_state is None or type(random_state) is int'
+
+    def train_test_split(self, test_size, shuffle: bool = True, **kwargs):
         """Разделение DataFrame на тренировочный и тестовый"""
+
+        self.__assert_split(**kwargs)
+
+        assert type(shuffle) is bool, 'type(shuffle) is bool'
+
         # stratify не нужен в виду разбиение одного датафрейма self
-        return train_test_split(self, test_size=test_size, shuffle=shuffle, random_state=random_state)
+        return train_test_split(self, test_size=test_size, shuffle=shuffle, **kwargs)
+
+    def stratified_shuffle_split(self, n_splits: int, **kwargs):
+        """"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
+        self.__assert_split(**kwargs)
+
+        assert type(n_splits) is int, 'type(n_splits) is int'
+
+        sss = StratifiedShuffleSplit(n_splits=n_splits, **kwargs)
+
+        return sss.split(x, y, n_splits=n_splits, **kwargs)
 
 
 if __name__ == '__main__':
