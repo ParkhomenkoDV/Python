@@ -34,6 +34,7 @@ from sklearn.inspection import permutation_importance
 from sklearn.decomposition import PCA as PrincipalComponentAnalysis
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.neighbors import NeighborhoodComponentsAnalysis
+from sklearn.manifold import TSNE as TDistributedStochasticNeighborEmbedding
 
 # разделение данных
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, ShuffleSplit
@@ -710,8 +711,31 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
-    def tsnc(self, n_components: int, inplace=False, **kwargs):
-        pass
+    @decorators.try_except('pass')
+    def tsne(self, n_components: int, inplace=False, **kwargs):
+        """Стохастическое вложение соседей с t-распределением"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
+        assert type(n_components) is int, f'{self.assert_sms} type(n_components) is int'
+        assert 1 <= n_components < min(len(x.columns), len(y.unique())), \
+            f'1 <= n_components < {min(len(x.columns), len(y.unique()))}'
+
+        tsne = TDistributedStochasticNeighborEmbedding(n_components=n_components)
+        x_reduced = DataFrame(tsne.fit_transform(x, y))
+        x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
+
+        if kwargs.get('test_size', None):
+            model = KNeighborsClassifier().fit(x_train, y_train)
+            score = model.score(x_test, y_test)
+            print(f'score: {score}')
+
+        if inplace:
+            self.__init__(x_reduced)
+        else:
+            return x_reduced
 
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
@@ -766,9 +790,13 @@ class DataFrame(pd.DataFrame):
 
 
 if __name__ == '__main__':
-    if 1:
+    if 0:
         df = DataFrame(pd.read_csv('russian_toxic_comments.csv'))
         print(df)
+
+        if 1:
+            target = 'toxic'
+            df.target = target
 
         if 0:
             print(DataFrame.vectorize_count)
@@ -790,38 +818,49 @@ if __name__ == '__main__':
             df.vectorize_tf_idf(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
             print(df)
 
-    if 0:
+    if 1:
         df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
         df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
                       "Thickness [m]", "Pressure level [db]"]
-        target = "Pressure level [db]"
-        df.target = target
         print(df)
-        print('----------------')
-        print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
-        print('----------------')
-        print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
-        print('----------------')
-        print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
-        print('----------------')
-        print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
 
-        # print(df.detect_outliers())
-        # print(df.find_corr_features())
-        # print(df.encode_one_hot(["Frequency [Hz]"]))
-        # print(df.mutual_info_score())
-        # print(df.select_mutual_info_score_features(4))
-        # print(df.select_mutual_info_score_features(2))
-        # print(df.select_mutual_info_score_features(1.))
-        # print(df.select_mutual_info_score_features(1.5))
-        # print(df.select_mutual_info_score_features(-1.5))
-        # print(df.mutual_info_score())
-        # print(df.select_mutual_info_score_features(4))
-        # print(df.select_mutual_info_score_features(1))
-        # print(df.select_mutual_info_score_features(1.9))
-        # print(df.select_mutual_info_score_features(50.))
-        # print(df.importance_features())
-        # print(df.select_importance_features(4))
-        # print(df.select_importance_features(1))
-        # print(df.select_importance_features(1.9))
-    # print(df.select_importance_features(50.))
+        if 1:
+            target = "Pressure level [db]"
+            df.target = target
+
+        if 1:
+            print(DataFrame.tsne)
+            print(df.tsne(0))
+            print(df.tsne(1))
+            print(df.tsne(3))
+            print(df.tsne(50))
+
+        if 0:
+            print('----------------')
+            print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
+            print('----------------')
+            print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
+            print('----------------')
+            print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
+            print('----------------')
+            print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
+
+            # print(df.detect_outliers())
+            # print(df.find_corr_features())
+            # print(df.encode_one_hot(["Frequency [Hz]"]))
+            # print(df.mutual_info_score())
+            # print(df.select_mutual_info_score_features(4))
+            # print(df.select_mutual_info_score_features(2))
+            # print(df.select_mutual_info_score_features(1.))
+            # print(df.select_mutual_info_score_features(1.5))
+            # print(df.select_mutual_info_score_features(-1.5))
+            # print(df.mutual_info_score())
+            # print(df.select_mutual_info_score_features(4))
+            # print(df.select_mutual_info_score_features(1))
+            # print(df.select_mutual_info_score_features(1.9))
+            # print(df.select_mutual_info_score_features(50.))
+            # print(df.importance_features())
+            # print(df.select_importance_features(4))
+            # print(df.select_importance_features(1))
+            # print(df.select_importance_features(1.9))
+        # print(df.select_importance_features(50.))
