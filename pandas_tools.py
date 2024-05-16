@@ -157,8 +157,8 @@ class DataFrame(pd.DataFrame):
         df = DataFrame(pf.fit_transform(self[columns]), columns=pf.get_feature_names_out())
         return df
 
-    def vectorize_count(self, columns: list[str], drop=False, inplace=False, **kwargs):
-        """Количественная векторизация токенов"""
+    def __assert_vectorize(self, **kwargs):
+        """Проверка на верность ввода в векторизатор"""
 
         # перевод токенов в нижний регистр
         lowercase = kwargs.get('lowercase', True)
@@ -183,12 +183,15 @@ class DataFrame(pd.DataFrame):
         analyzer = analyzer.strip().lower()
         assert analyzer in ("word", "char", "char_wb"), 'analyzer in ("word", "char", "char_wb")'
 
-        vectorizer = CountVectorizer(lowercase=lowercase,
-                                     stop_words=stop_words,
-                                     analyzer=analyzer,
-                                     ngram_range=ngram_range)
+    def vectorize_count(self, columns: list[str], drop=False, inplace=False, **kwargs):
+        """Количественная векторизация токенов"""
+
+        self.__assert_vectorize(**kwargs)
+
         corpus = self[columns].to_numpy().flatten()
+        vectorizer = CountVectorizer(**kwargs)
         df = DataFrame(vectorizer.fit_transform(corpus).toarray(), columns=vectorizer.get_feature_names_out())
+
         if drop: self.__init__(self.drop(columns, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
@@ -196,10 +199,15 @@ class DataFrame(pd.DataFrame):
             return df
 
     # TODO
-    def vectorize_tf_idf(self, columns: list[str], drop=False, inplace=False):
+    def vectorize_tf_idf(self, columns: list[str], drop=False, inplace=False, **kwargs):
         """tf-idf векторизация токенов"""
-        vectorizer = TfidfVectorizer()
+
+        self.__assert_vectorize(**kwargs)
+
+        corpus = self[columns].to_numpy().flatten()
+        vectorizer = TfidfVectorizer(**kwargs)
         vectorizer.fit(self[columns].to_list())
+        
         return DataFrame(vectorizer.transform(self[columns]).to_list())  # для преобразования из sparce matrix
 
     def detect_outliers(self, method: str = '3sigma'):
