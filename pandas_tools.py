@@ -198,7 +198,6 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    # TODO
     def vectorize_tf_idf(self, columns: list[str], drop=False, inplace=False, **kwargs):
         """tf-idf векторизация токенов"""
 
@@ -206,9 +205,13 @@ class DataFrame(pd.DataFrame):
 
         corpus = self[columns].to_numpy().flatten()
         vectorizer = TfidfVectorizer(**kwargs)
-        vectorizer.fit(self[columns].to_list())
-        
-        return DataFrame(vectorizer.transform(self[columns]).to_list())  # для преобразования из sparce matrix
+        df = DataFrame(vectorizer.fit_transform(corpus).toarray(), columns=vectorizer.get_feature_names_out())
+
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
 
     def detect_outliers(self, method: str = '3sigma'):
         """Обнаружение выбросов статистическим методом"""
@@ -763,15 +766,26 @@ if __name__ == '__main__':
         df = DataFrame(pd.read_csv('russian_toxic_comments.csv'))
         print(df)
 
-        if 1:
-            print('vectorize_count')
-            print(df.vectorize_count(['comment']))
+        if 0:
+            print(DataFrame.vectorize_count)
             print(df.vectorize_count('comment'))
+            print(df.vectorize_count(['comment']))
             print(df.vectorize_count(['comment'], stop_words=[]))
             print(df.vectorize_count(['comment'], stop_words=['00', 'ёмкость']))
 
             df.vectorize_count(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
             print(df)
+
+        if 1:
+            print(DataFrame.vectorize_tf_idf)
+            print(df.vectorize_tf_idf('comment'))
+            print(df.vectorize_tf_idf(['comment']))
+            print(df.vectorize_tf_idf(['comment'], stop_words=[]))
+            print(df.vectorize_tf_idf(['comment'], stop_words=['00', 'ёмкость']))
+
+            df.vectorize_tf_idf(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
+            print(df)
+
 
     if 0:
         df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
