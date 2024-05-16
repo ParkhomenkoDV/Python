@@ -10,6 +10,8 @@ import seaborn as sns
 # библиотеки ML
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, TargetEncoder
 
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+
 from sklearn.preprocessing import PolynomialFeatures
 
 from sklearn.feature_selection import (f_classif as f_classification, mutual_info_classif as mutual_info_classification,
@@ -154,6 +156,51 @@ class DataFrame(pd.DataFrame):
         pf = PolynomialFeatures(degree=degree, include_bias=include_bias)
         df = DataFrame(pf.fit_transform(self[columns]), columns=pf.get_feature_names_out())
         return df
+
+    def vectorize_count(self, columns: list[str], drop=False, inplace=False, **kwargs):
+        """Количественная векторизация токенов"""
+
+        # перевод токенов в нижний регистр
+        lowercase = kwargs.get('lowercase', True)
+        assert type(lowercase) is bool, 'type(lowercase) is bool'
+
+        # учет стоп-слов
+        stop_words = kwargs.get('stop_words', None)
+        assert stop_words is None or type(stop_words) is list, 'stop_words is None or type(stop_words) is list'
+        if type(stop_words) is list:
+            assert all(map(lambda w: type(w) is str, stop_words)), 'all(map(lambda w: type(w) is str, stop_words))'
+
+        # пределы слов в одном токене
+        ngram_range = kwargs.get('ngram_range', (1, 1))
+        assert type(ngram_range) in (tuple, list), 'type(ngram_range) in (tuple, list)'
+        assert len(ngram_range) == 2, 'len(ngram_range) == 2'
+        assert all(map(lambda x: type(x) is int, ngram_range)), 'all(map(lambda x: type(x) is int, ngram_range))'
+        assert ngram_range[0] <= ngram_range[1], 'ngram_range[0] <= ngram_range[1]'
+
+        # анализатор разбиения
+        analyzer = kwargs.get('analyzer', 'word')
+        assert type(analyzer) is str, 'type(analyzer) is str'
+        analyzer = analyzer.strip().lower()
+        assert analyzer in ("word", "char", "char_wb"), 'analyzer in ("word", "char", "char_wb")'
+
+        vectorizer = CountVectorizer(lowercase=lowercase,
+                                     stop_words=stop_words,
+                                     analyzer=analyzer,
+                                     ngram_range=ngram_range)
+        corpus = self[columns].to_numpy().flatten()
+        df = DataFrame(vectorizer.fit_transform(corpus).toarray(), columns=vectorizer.get_feature_names_out())
+        if drop: self.__init__(self.drop(columns, axis=1))
+        if inplace:
+            self.__init__(pd.concat([self, df], axis=1))
+        else:
+            return df
+
+    # TODO
+    def vectorize_tf_idf(self, columns: list[str], drop=False, inplace=False):
+        """tf-idf векторизация токенов"""
+        vectorizer = TfidfVectorizer()
+        vectorizer.fit(self[columns].to_list())
+        return DataFrame(vectorizer.transform(self[columns]).to_list())  # для преобразования из sparce matrix
 
     def detect_outliers(self, method: str = '3sigma'):
         """Обнаружение выбросов статистическим методом"""
@@ -648,6 +695,9 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
+    def tsnc(self, n_components: int, inplace=False, **kwargs):
+        pass
+
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
@@ -701,38 +751,52 @@ class DataFrame(pd.DataFrame):
 
 
 if __name__ == '__main__':
-    df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
-    df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
-                  "Thickness [m]", "Pressure level [db]"]
-    target = "Pressure level [db]"
-    df.target = target
-    print(df)
-    print('----------------')
-    print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
-    print('----------------')
-    print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
-    print('----------------')
-    print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
-    print('----------------')
-    print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
+    if 1:
+        df = DataFrame(pd.read_csv('russian_toxic_comments.csv'))
+        print(df)
 
-    # print(df.detect_outliers())
-    # print(df.find_corr_features())
-    # print(df.encode_one_hot(["Frequency [Hz]"]))
-    # print(df.mutual_info_score())
-    # print(df.select_mutual_info_score_features(4))
-    # print(df.select_mutual_info_score_features(2))
-    # print(df.select_mutual_info_score_features(1.))
-    # print(df.select_mutual_info_score_features(1.5))
-    # print(df.select_mutual_info_score_features(-1.5))
-    # print(df.mutual_info_score())
-    # print(df.select_mutual_info_score_features(4))
-    # print(df.select_mutual_info_score_features(1))
-    # print(df.select_mutual_info_score_features(1.9))
-    # print(df.select_mutual_info_score_features(50.))
-    # print(df.importance_features())
-    # print(df.select_importance_features(4))
-    # print(df.select_importance_features(1))
-    # print(df.select_importance_features(1.9))
+        if 1:
+            print('vectorize_count')
+            print(df.vectorize_count(['comment']))
+            print(df.vectorize_count('comment'))
+            print(df.vectorize_count(['comment'], stop_words=[]))
+            print(df.vectorize_count(['comment'], stop_words=['00', 'ёмкость']))
+
+            df.vectorize_count(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
+            print(df)
+
+    if 0:
+        df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
+        df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
+                      "Thickness [m]", "Pressure level [db]"]
+        target = "Pressure level [db]"
+        df.target = target
+        print(df)
+        print('----------------')
+        print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
+        print('----------------')
+        print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
+        print('----------------')
+        print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
+        print('----------------')
+        print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
+
+        # print(df.detect_outliers())
+        # print(df.find_corr_features())
+        # print(df.encode_one_hot(["Frequency [Hz]"]))
+        # print(df.mutual_info_score())
+        # print(df.select_mutual_info_score_features(4))
+        # print(df.select_mutual_info_score_features(2))
+        # print(df.select_mutual_info_score_features(1.))
+        # print(df.select_mutual_info_score_features(1.5))
+        # print(df.select_mutual_info_score_features(-1.5))
+        # print(df.mutual_info_score())
+        # print(df.select_mutual_info_score_features(4))
+        # print(df.select_mutual_info_score_features(1))
+        # print(df.select_mutual_info_score_features(1.9))
+        # print(df.select_mutual_info_score_features(50.))
+        # print(df.importance_features())
+        # print(df.select_importance_features(4))
+        # print(df.select_importance_features(1))
+        # print(df.select_importance_features(1.9))
     # print(df.select_importance_features(50.))
-    model = Classifier(DecisionTreeClassifier())
