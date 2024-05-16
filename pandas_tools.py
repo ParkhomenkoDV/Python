@@ -160,6 +160,10 @@ class DataFrame(pd.DataFrame):
     def __assert_vectorize(self, **kwargs):
         """Проверка на верность ввода в векторизатор"""
 
+        # кодировка
+        encoding = kwargs.get('encoding', 'utf-8')
+        assert type(encoding) is str, 'type(encoding) is str'
+
         # перевод токенов в нижний регистр
         lowercase = kwargs.get('lowercase', True)
         assert type(lowercase) is bool, 'type(lowercase) is bool'
@@ -785,7 +789,6 @@ if __name__ == '__main__':
 
             df.vectorize_tf_idf(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
             print(df)
-
 
     if 0:
         df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
