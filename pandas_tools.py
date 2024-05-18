@@ -721,7 +721,10 @@ class DataFrame(pd.DataFrame):
         assert 1 <= n_components < min(len(x.columns), len(y.unique())), \
             f'1 <= n_components < {min(len(x.columns), len(y.unique()))}'
 
-        tsne = TDistributedStochasticNeighborEmbedding(n_components=n_components)
+        perplexity = kwargs.get('perplexity', 30)  # сложность
+        assert type(perplexity) in (int, float), f'type(perplexity) in (int, float)'
+
+        tsne = TDistributedStochasticNeighborEmbedding(n_components=n_components, **kwargs)
         x_reduced = DataFrame(tsne.fit_transform(x, y))
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
                                                             test_size=kwargs.get('test_size', 0.25),
@@ -786,9 +789,6 @@ class DataFrame(pd.DataFrame):
     def __assert_split(self, **kwargs) -> None:
         """Проверка параметров разбиения"""
 
-        test_size = kwargs.get('test_size', None)
-        assert type(test_size) in (float, int), 'type(test_size) in (float, int)'
-
         random_state = kwargs.get('random_state', None)
         assert random_state is None or type(random_state) is int, 'random_state is None or type(random_state) is int'
 
@@ -796,6 +796,8 @@ class DataFrame(pd.DataFrame):
         """Разделение DataFrame на тренировочный и тестовый"""
 
         self.__assert_split(**kwargs)
+
+        assert type(test_size) in (float, int), 'type(test_size) in (float, int)'
 
         assert type(shuffle) is bool, 'type(shuffle) is bool'
 
@@ -856,6 +858,10 @@ if __name__ == '__main__':
             df.target = target
 
         if 1:
+            print(DataFrame.train_test_split)
+            df.train_test_split(test_size=0.2)
+
+        if 0:
             print(DataFrame.tsne)
             print(df.tsne(0))
             print(df.tsne(1))
@@ -863,7 +869,7 @@ if __name__ == '__main__':
             print(df.tsne(50))
 
         if 0:
-            print('----------------')
+            print(DataFrame.polynomial_features)
             print(df.polynomial_features(["Frequency [Hz]"], 3, True).columns)
             print('----------------')
             print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, True).columns)
