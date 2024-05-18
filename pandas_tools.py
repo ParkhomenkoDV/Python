@@ -723,6 +723,7 @@ class DataFrame(pd.DataFrame):
 
         perplexity = kwargs.get('perplexity', 30)  # сложность
         assert type(perplexity) in (int, float), f'type(perplexity) in (int, float)'
+        assert 1 <= perplexity, '1 <= perplexity'
 
         tsne = TDistributedStochasticNeighborEmbedding(n_components=n_components, **kwargs)
         x_reduced = DataFrame(tsne.fit_transform(x, y))
