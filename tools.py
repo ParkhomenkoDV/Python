@@ -356,14 +356,18 @@ def correlation(data, *args, method='pearson', dropna=False, **kwargs):
     return cor
 
 
-def show_correlation(df, show_num=True, cmap='bwr', units='', fmt=4, savefig=False, figsize=(9, 9), **kwargs):
+def show_correlation(df, show_num=True, cmap='bwr', fmt=4, savefig=False, **kwargs):
+    """Построение матрицы корреляции"""
+
+    assert type(fmt) is int, 'type(fmt) is int'
+    assert 1 <= fmt, '1 <= fmt'
+
     cor = correlation(df, **kwargs)
     if cor is None: return
     if not isnum(fmt, type_num='int') or fmt < 0: fmt = 4
-    if units: cor = cor * 100
     cor = cor.round(fmt)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=kwargs.get('figsize', (12, 12)))
     plt.suptitle('Correlation', fontsize=16, fontweight='bold')
     ax.set_aspect('equal')
     im = ax.imshow(cor, interpolation='nearest',
