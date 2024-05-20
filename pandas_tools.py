@@ -218,11 +218,10 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def detect_outliers(self, method: str = '3sigma'):
+    def detect_outliers(self, method: str = '3sigma', k=1.5):
         """Обнаружение выбросов статистическим методом"""
-        assert type(method) is str, f'{self.assert_sms} type(method) is str'
+        assert type(method) is str, f'type(method) is str'
         method = method.strip().lower()
-        assert method in ('3sigma', 'tukey'), f'{self.assert_sms} method in ("3sigma", "Tukey")!'
 
         outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
@@ -234,7 +233,10 @@ class DataFrame(pd.DataFrame):
             elif method == 'tukey':
                 q1, q3 = self[col].quantile(0.25), self[col].quantile(0.75)
                 iqr = q3 - q1
-                lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                lower_bound, upper_bound = q1 - k * iqr, q3 + k * iqr
+            else:
+                raise Exception('method in ("3sigma", "Tukey")')
+
             col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
             outliers = pd.concat([outliers, col_outliers])
         return DataFrame(outliers).sort_index().drop_duplicates()
