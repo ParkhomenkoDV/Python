@@ -228,6 +228,48 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
+    def fill_na(self, value=None, method='', inplace=False):
+        """Заполнение nan, null, na значений в DataFrame согласно значению value или методу method"""
+
+        assert type(value) is None or type(value) in (int, float, str)
+        assert type(method) is str
+        method = method.strip().lower()
+
+        if value is not None:
+            df = self.fillna(value)
+        else:
+            match method:
+                case 'mean':
+                    df = self.fillna(self.mean())
+                case 'median':
+                    df = self.fillna(self.median())
+                case 'mode':
+                    df = self.fillna(self.mode())
+                case 'hmean':
+                    df = self.fillna(pd.Series([scipy.stats.hmean(col[~np.isnan(col)]) for col in self.values.T],
+                                               index=self.columns))
+                case 'indicator':
+                    temple_df = pd.DataFrame(self.isna().astype(int).to_numpy(),
+                                             columns=self.isna().columns + '_indicator')
+                    df = pd.concat((self, temple_df), axis=1)
+                    df = df.loc[:, (df != 0).any(axis=0)]
+                case 'interpolation':
+                    df = self.interpolate(method='linear', limit_direction='forward')
+                    df = fillna(df)
+                case 'prev_num':
+                    df = self.fillna(self.ffill()).fillna(self.bfill())
+                case 'model':
+                    pass
+                case _:
+                    valid_methods = ('mean', 'median', 'mode', 'hmean', 'indicator', 'prev_num', 'interpolation')
+                    raise ValueError(f"Incorrect method. This method doesn't support. Valid methods: {valid_methods}")
+
+        if inplace:
+            self.__init__(df)
+            return
+        else:
+            return df
+
     def distribution(self, columns: list[str] | tuple[str]) -> dict[str:dict[str:float]]:
         """Определение распределения атрибутов"""
         assert type(columns) in (list, tuple)
@@ -304,7 +346,7 @@ class DataFrame(pd.DataFrame):
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
         assert type(method) is str
-        method = method.lower()
+        method = method.strip().lower()
         assert method in ('pearson', 'kendall', 'spearman')
 
         assert type(threshold) is float
