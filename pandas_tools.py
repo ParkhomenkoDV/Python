@@ -2,6 +2,7 @@ from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
+import scipy
 
 # библиотеки визуализации
 import matplotlib.pyplot as plt
@@ -49,6 +50,15 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
 from sklearn.metrics import mutual_info_score
+
+'''import nltk
+
+nltk.download('punkt')
+nltk.download('stopwords')
+from nltk.tokenize import sent_tokenize
+from nltk.corpus import stopwords
+
+import pymorphy2 as pymorphy  # model = pymorphy.MorphAnalyzer'''
 
 # частные библиотеки
 import decorators
@@ -218,7 +228,24 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def detect_outliers(self, method: str = '3sigma', k=1.5):
+    def distribution(self, columns: list[str] | tuple[str]) -> dict[str:dict[str:float]]:
+        """Определение распределения атрибутов"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
+        result = dict()
+        for column in columns:
+            skew, kurtosis = self[column].skew(), self[column].kurtosis()
+            result[column] = {'skew': skew, 'kurtosis': kurtosis, 'normal': abs(skew) <= 2 and abs(kurtosis) <= 7}
+        return result
+
+    def variation_coefficient(self, columns: list[str] | tuple[str]) -> dict[str:float]:
+        """Коэффициент вариации = мера разброса данных"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+        return {column: self[column].std() / self[column].mean() for column in columns}
+
+    def detect_outliers(self, method: str = 'sigma', **kwargs):
         """Обнаружение выбросов статистическим методом"""
         assert type(method) is str, f'type(method) is str'
         method = method.strip().lower()
@@ -226,20 +253,25 @@ class DataFrame(pd.DataFrame):
         outliers = DataFrame()
         for col in self.select_dtypes(include='number').columns:
             lower_bound, upper_bound = -np.inf, np.inf
-            if method == '3sigma':  # если данные распределены нормально!
+            if method == 'sigma':  # если данные распределены нормально!
                 mean = self[col].mean()
                 std = self[col].std()
-                lower_bound, upper_bound = mean - 3 * std, mean + 3 * std
+                lower_bound, upper_bound = mean - kwargs.get('k', 3) * std, mean + kwargs.get('k', 3) * std
             elif method == 'tukey':
                 q1, q3 = self[col].quantile(0.25), self[col].quantile(0.75)
                 iqr = q3 - q1
-                lower_bound, upper_bound = q1 - k * iqr, q3 + k * iqr
+                lower_bound, upper_bound = q1 - kwargs.get('k', 1.5) * iqr, q3 + kwargs.get('k', 1.5) * iqr
+            elif method == 'shovene':
+                mean = self[col].mean()
+                std = self[col].std()
+                d = self[scipy.special.erfc(abs(self[col] - mean) / std) < 1 / (2 * len(self[col]))]
+                outliers = pd.concat([outliers, d]).drop_duplicates().sort_index()
             else:
-                raise Exception('method in ("3sigma", "Tukey")')
+                raise Exception('method in ("Sigma", "Tukey", "Shovene")')
 
             col_outliers = self[(self[col] < lower_bound) | (self[col] > upper_bound)]
             outliers = pd.concat([outliers, col_outliers])
-        return DataFrame(outliers).sort_index().drop_duplicates()
+        return DataFrame(outliers).drop_duplicates().sort_index()
 
     def detect_model_outliers(self, fraction: float, threshold=0.5, **kwargs):
         """Обнаружение выбросов модельным методом"""
@@ -269,18 +301,24 @@ class DataFrame(pd.DataFrame):
         outliers['outlier'] = outliers['probability'] < (1 - threshold)
         return self[outliers['outlier']].sort_index()
 
-    def select_corr_features(self, threshold: float = 0.85) -> list[str]:
-        """Выбор линейно-независимых признаков"""
-        com_m = self.corr().abs()  # матрица корреляции
+    def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
+        """Линейно-независимые признаки"""
+        assert type(method) is str
+        method = method.lower()
+        assert method in ('pearson', 'kendall', 'spearman')
+
+        assert type(threshold) is float
+        assert -1 <= threshold <= 1
+
+        corr_matrix = self.corr(method=method).abs()  # матрица корреляции
 
         # верхний треугольник матрицы корреляции без диагонали
-        uptriangle = com_m.where(np.triu(np.ones(com_m.shape), k=1).astype(bool))
+        uptriangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
-        # индексы столбцов с корреляцией выше порога
-        to_drop = [column for column in uptriangle.columns[1:]
-                   if any(threshold > uptriangle[column]) or all(uptriangle[column].isna())]
+        # группировка столбцов по столбцам и сортировка по убыванию значений линейной зависимости
+        result = uptriangle.unstack(-1).sort_values(ascending=False)
 
-        return to_drop
+        return result[result >= threshold].to_dict()
 
     def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
                   **kwargs) -> list:
@@ -823,8 +861,6 @@ class DataFrame(pd.DataFrame):
 
 if __name__ == '__main__':
     if 0:
-        df = DataFrame(pd.read_csv('russian_toxic_comments.csv'))
-        print(df)
 
         if 1:
             target = 'toxic'
@@ -851,17 +887,19 @@ if __name__ == '__main__':
             print(df)
 
     if 1:
-        df = DataFrame(pd.read_csv('airfoil_self_noise.dat', sep="\t", header=None))
-        df.columns = ["Frequency [Hz]", "Attack angle [deg]", "Chord length [m]", "Free-stream velocity [m/s]",
-                      "Thickness [m]", "Pressure level [db]"]
+        from sklearn.datasets import fetch_california_housing
+
+        data = fetch_california_housing(as_frame=True)
+        df = pd.concat([data.data, data.target], axis=1)
+        df = DataFrame(df)
         print(df)
 
         if 1:
-            target = "Pressure level [db]"
+            target = "MedHouseVal"
             df.target = target
 
-        if 1:
-            print(DataFrame.train_test_split)
+        if 0:
+            print(DataFrame.train_test_split.__name__)
             df.train_test_split(test_size=0.2)
 
         if 0:
@@ -880,8 +918,31 @@ if __name__ == '__main__':
             print(df.polynomial_features(["Frequency [Hz]"], 3, False).columns)
             print('----------------')
             print(df.polynomial_features(["Frequency [Hz]", "Attack angle [deg]"], 4, False).columns)
+        if 0:
+            print(DataFrame.detect_outliers.__name__)
+            print(df.detect_outliers('Sigma'))
+            print(df.detect_outliers('Tukey'))
+            print(df.detect_outliers('Shovene'))
 
-            # print(df.detect_outliers())
+        if 1:
+            print(DataFrame.corr_features.__name__)
+            print(df.corr_features())
+            print(df.corr_features(method='pearson'))
+            print(df.corr_features(method='spearman'))
+            print(df.corr_features(method='pearson', threshold=0.5))
+
+        if 1:
+            print(DataFrame.distribution.__name__)
+            print(df.distribution([target]))
+            print(df.distribution(df.columns.to_list()))
+
+        if 1:
+            print(DataFrame.variation_coefficient.__name__)
+            print(df.variation_coefficient([target]))
+            print(df.variation_coefficient(df.columns.to_list()))
+
+        if 0:
+            pass
             # print(df.find_corr_features())
             # print(df.encode_one_hot(["Frequency [Hz]"]))
             # print(df.mutual_info_score())
@@ -899,4 +960,4 @@ if __name__ == '__main__':
             # print(df.select_importance_features(4))
             # print(df.select_importance_features(1))
             # print(df.select_importance_features(1.9))
-        # print(df.select_importance_features(50.))
+            # print(df.select_importance_features(50.))
