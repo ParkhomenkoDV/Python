@@ -51,6 +51,8 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
 from sklearn.metrics import mutual_info_score
 
+from imblearn import under_sampling, over_sampling
+
 '''import nltk
 
 nltk.download('punkt')
@@ -88,7 +90,7 @@ class DataFrame(pd.DataFrame):
         self.__target = ''
 
     def __get_target(self, **kwargs) -> str:
-        """Получение target из словаря и приватного атрибута"""
+        """Получение target из словаря или приватного атрибута"""
         target = kwargs.get('target', self.__target)
         assert type(target) is str, f'{self.assert_sms} type(target) is str'
         assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
@@ -231,7 +233,7 @@ class DataFrame(pd.DataFrame):
     def fill_na(self, value=None, method='', inplace=False):
         """Заполнение nan, null, na значений в DataFrame согласно значению value или методу method"""
 
-        assert type(value) is None or type(value) in (int, float, str)
+        assert value is None or type(value) in (int, float, str)
         assert type(method) is str
         method = method.strip().lower()
 
@@ -250,15 +252,17 @@ class DataFrame(pd.DataFrame):
                                                index=self.columns))
                 case 'indicator':
                     temple_df = pd.DataFrame(self.isna().astype(int).to_numpy(),
-                                             columns=self.isna().columns + '_indicator')
+                                             columns=self.isna().columns + '_na')
                     df = pd.concat((self, temple_df), axis=1)
                     df = df.loc[:, (df != 0).any(axis=0)]
                 case 'interpolation':
                     df = self.interpolate(method='linear', limit_direction='forward')
-                    df = fillna(df)
-                case 'prev_num':
+                    df = self.fillna(df)
+                case 'prev':
                     df = self.fillna(self.ffill()).fillna(self.bfill())
-                case 'model':
+                case 'next':  # TODO
+                    pass
+                case 'model':  # TODO
                     pass
                 case _:
                     valid_methods = ('mean', 'median', 'mode', 'hmean', 'indicator', 'prev_num', 'interpolation')
@@ -362,8 +366,7 @@ class DataFrame(pd.DataFrame):
 
         return result[result >= threshold].to_dict()
 
-    def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
-                  **kwargs) -> list:
+    def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs) -> list:
         """Линейные модели с разной L1-регуляризацией"""
         target = self.__get_target(**kwargs)
         assert isiter(l1), f'{self.assert_sms} isiter(l1)'
@@ -380,18 +383,17 @@ class DataFrame(pd.DataFrame):
             if early_stopping and all(map(lambda c: c == 0, model.coef_)): break
         return result
 
-    def l1_importance(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
-                      **kwargs):
+    def l1_importance(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
         l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
+
         df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=x.columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
-    def l1_importance_plot(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False,
-                           **kwargs):
+    def l1_importance_plot(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
         """Построение коэффициентов признаков линейных моделей с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
 
@@ -707,15 +709,231 @@ class DataFrame(pd.DataFrame):
         '''
         return DataFrame(df)
 
-    def undersampling(self):
-        """"""
-        # Tomek Links
-        pass
+    def undersampling(self, target: str | int | float, method='RandomUnderSampler', **kwargs):
+        """Under sampling dataset according to method
 
-    def oversampling(self):
-        """"""
-        # SMOTE
-        pass
+        Supported methods:
+        'RandomUnderSampler',
+        'EEditedNearestNeighbours',
+        'RepeatedEditedNearestNeighbours',
+        'AllKNN'
+        'CondensedNearestNeighbour',
+        'OneSidedSelection',
+        'NeighbourhoodCleaningRule',
+        'ClusterCentroids',
+        'TomekLinks',
+        'NearMiss',
+        'InstanceHardnessThreshold'
+
+        Parameters:
+        df (pd.DataFrame): Input dataset
+        target (str | int | float): Name of the target column
+        method (str): Under-sampling method (default='random')
+        **kwargs: Additional parameters for the under-sampling method
+
+        Returns:
+        pd.DataFrame: Under-sampled dataset
+        """
+        # checking common input parameters
+        valid_methods = ('RandomUnderSampler', 'EditedNearestNeighbours', 'RepeatedEditedNearestNeighbours', 'AllKNN',
+                         'CondensedNearestNeighbour', 'OneSidedSelection', 'NeighbourhoodCleaningRule',
+                         'ClusterCentroids',
+                         'TomekLinks', 'NearMiss', 'InstanceHardnessThreshold')
+
+        assert method in valid_methods, f"This method doesn't support. Valid methods: {valid_methods}"
+        assert target in df.columns, f'target must be in columns of df: {list(df.columns)}'
+
+        # listing all possible parameters for sample processing
+        random_state = kwargs.pop('random_state', None)
+        sampling_strategy = kwargs.pop('sampling_strategy', 'auto')
+        n_neighbors = kwargs.pop('n_neighbors', 3)
+
+        kind_sel = kwargs['kind_sel'] if 'kind_sel' in kwargs.keys() else 'all'
+        n_jobs = kwargs['n_jobs'] if 'n_jobs' in kwargs.keys() else None
+        max_iter = kwargs['max_iter'] if 'max_iter' in kwargs.keys() else 100
+        allow_minority = kwargs['allow_minority'] if 'allow_minority' in kwargs.keys() else False
+        n_seeds_S = kwargs['n_seeds_S'] if 'n_seeds_S' in kwargs.keys() else 1
+        edited_nearest_neighbours = kwargs[
+            'edited_nearest_neighbours'] if 'edited_nearest_neighbours' in kwargs.keys() else None
+        threshold_cleaning = kwargs['threshold_cleaning'] if 'threshold_cleaning' in kwargs.keys() else 0.5
+        estimator = kwargs['estimator'] if 'estimator' in kwargs.keys() else None
+        voting = kwargs['voting'] if 'voting' in kwargs.keys() else 'auto'
+        version = kwargs['version'] if 'version' in kwargs.keys() else 1
+        n_neighbors_ver3 = kwargs['n_neighbors_ver3'] if 'n_neighbors_ver3' in kwargs.keys() else 3
+        cv = kwargs['cv'] if 'cv' in kwargs.keys() else 5
+
+        # main program
+        match method:
+            case 'RandomUnderSampler':
+                sampler = under_sampling.RandomUnderSampler(random_state=random_state,
+                                                            sampling_strategy=sampling_strategy)
+            case 'EditedNearestNeighbours':
+                sampler = under_sampling.EditedNearestNeighbours(sampling_strategy=sampling_strategy,
+                                                                 n_neighbors=n_neighbors,
+                                                                 kind_sel=kind_sel,
+                                                                 n_jobs=n_jobs)
+            case 'RepeatedEditedNearestNeighbours':
+                sampler = under_sampling.RepeatedEditedNearestNeighbours(sampling_strategy=sampling_strategy,
+                                                                         n_neighbors=n_neighbors,
+                                                                         max_iter=max_iter,
+                                                                         kind_sel=kind_sel,
+                                                                         n_jobs=n_jobs)
+            case 'AllKNN':
+                sampler = under_sampling.AllKNN(sampling_strategy=sampling_strategy,
+                                                n_neighbors=n_neighbors,
+                                                allow_minority=allow_minority,
+                                                kind_sel=kind_sel,
+                                                n_jobs=n_jobs)
+            case 'CondensedNearestNeighbour':
+                sampler = under_sampling.CondensedNearestNeighbour(sampling_strategy=sampling_strategy,
+                                                                   random_state=random_state,
+                                                                   n_neighbors=n_neighbors,
+                                                                   n_jobs=n_jobs,
+                                                                   n_seeds_S=n_seeds_S)
+            case 'OneSidedSelection':
+                sampler = under_sampling.OneSidedSelection(sampling_strategy=sampling_strategy,
+                                                           random_state=random_state,
+                                                           n_neighbors=n_neighbors,
+                                                           n_jobs=n_jobs,
+                                                           n_seeds_S=n_seeds_S)
+            case 'NeighbourhoodCleaningRule':
+                sampler = under_sampling.NeighbourhoodCleaningRule(sampling_strategy=sampling_strategy,
+                                                                   edited_nearest_neighbours=edited_nearest_neighbours,
+                                                                   n_neighbors=n_neighbors,
+                                                                   n_jobs=n_jobs,
+                                                                   kind_sel=kind_sel,
+                                                                   threshold_cleaning=threshold_cleaning)
+            case 'ClusterCentroids':
+                sampler = under_sampling.ClusterCentroids(sampling_strategy=sampling_strategy,
+                                                          random_state=random_state,
+                                                          estimator=estimator,
+                                                          voting=voting)
+            case 'TomekLinks':
+                sampler = under_sampling.TomekLinks(sampling_strategy=sampling_strategy,
+                                                    n_jobs=n_jobs)
+            case 'NearMiss':
+                sampler = under_sampling.NearMiss(sampling_strategy=sampling_strategy,
+                                                  version=version,
+                                                  n_neighbors=n_neighbors,
+                                                  n_neighbors_ver3=n_neighbors_ver3,
+                                                  n_jobs=n_jobs)
+            case 'InstanceHardnessThreshold':
+                sampler = under_sampling.InstanceHardnessThreshold(estimator=estimator,
+                                                                   sampling_strategy=sampling_strategy,
+                                                                   random_state=random_state,
+                                                                   cv=cv,
+                                                                   n_jobs=n_jobs)
+
+        changed_data, changed_labels = sampler.fit_resample(df.to_numpy(), df[target].to_numpy())
+        return pd.DataFrame(changed_data, changed_labels, columns=df.columns)
+
+    def oversampling(self, target: str | int | float, method='RandomOverSampler', **kwargs):
+        """
+        Over sampling dataset according to method
+
+        Supported methods:
+        'RandomOverSampler',
+        'SMOTE',
+        'ADASYN',
+        'BorderlineSMOTE',
+        'SVMSMOTE',
+        'KMeansSMOTE',
+        'SMOTENC',
+        'SMOTEN'
+
+        Parameters:
+        df (pd.DataFrame): Input dataset
+        target (str | int | float): Name of the target column
+        method (str): Over-sampling method (default='RandomOverSampler')
+        **kwargs: Additional parameters for the over-sampling method
+
+        Returns:
+        pd.DataFrame: Over-sampled dataset
+        """
+        # checking common input parameters
+        valid_methods = (
+            'RandomOverSampler', 'SMOTE', 'ADASYN', 'BorderlineSMOTE', 'SVMSMOTE', 'KMeansSMOTE', 'SMOTENC', 'SMOTEN')
+        assert isinstance(df, pd.DataFrame), f'Incorrect dtype. df: {type(df)} instead of {pd.DataFrame}'
+        assert method in valid_methods, f"This method doesn't support. Valid methods: {valid_methods}"
+        assert target in df.columns, f'target must be in columns of df: {list(df.columns)}'
+
+        # listing all possible parameters for sample processing
+        default_k_neighbors = 2 if method == 'KMeansSMOTE' else 5  # it's necessary because
+        # there are several parameters with the same names and different default values (KMeansSMOTE=2, others=5)
+        random_state = kwargs['random_state'] if 'random_state' in kwargs.keys() else None
+        sampling_strategy = kwargs['sampling_strategy'] if 'sampling_strategy' in kwargs.keys() else 'auto'
+        density_exponent = kwargs['density_exponent'] if 'density_exponent' in kwargs.keys() else 'auto'
+        cluster_balance_threshold = kwargs[
+            'cluster_balance_threshold'] if 'cluster_balance_threshold' in kwargs.keys() else 'auto'
+        shrinkage = kwargs['shrinkage'] if 'shrinkage' in kwargs.keys() else None
+        k_neighbors = kwargs['k_neighbors'] if 'k_neighbors' in kwargs.keys() else default_k_neighbors
+        n_neighbors = kwargs['n_neighbors'] if 'n_neighbors' in kwargs.keys() else 5
+        m_neighbors = kwargs['m_neighbors'] if 'm_neighbors' in kwargs.keys() else 10
+        n_jobs = kwargs['n_jobs'] if 'n_jobs' in kwargs.keys() else None
+        kmeans_estimator = kwargs['kmeans_estimator'] if 'kmeans_estimator' in kwargs.keys() else None
+        svm_estimator = kwargs['svm_estimator'] if 'svm_estimator' in kwargs.keys() else None  #
+        out_step = kwargs['out_step'] if 'out_step' in kwargs.keys() else 0.5
+        kind = kwargs['kind'] if 'kind' in kwargs.keys() else 'borderline-1'
+        categorical_features = kwargs['categorical_features'] if 'categorical_features' in kwargs.keys() else None
+        categorical_encoder = kwargs['categorical_encoder'] if 'categorical_encoder' in kwargs.keys() else None
+
+        # main program
+        match method:
+            case 'RandomOverSampler':
+                sampler = over_sampling.RandomOverSampler(random_state=random_state,
+                                                          sampling_strategy=sampling_strategy,
+                                                          shrinkage=shrinkage)
+            case 'SMOTE':
+                sampler = over_sampling.SMOTE(random_state=random_state,
+                                              sampling_strategy=sampling_strategy,
+                                              k_neighbors=k_neighbors,
+                                              n_jobs=n_jobs)
+            case 'ADASYN':
+                sampler = over_sampling.ADASYN(random_state=random_state,
+                                               sampling_strategy=sampling_strategy,
+                                               n_neighbors=n_neighbors,
+                                               n_jobs=n_jobs)
+            case 'BorderlineSMOTE':
+                sampler = over_sampling.BorderlineSMOTE(random_state=random_state,
+                                                        sampling_strategy=sampling_strategy,
+                                                        k_neighbors=k_neighbors,
+                                                        m_neighbors=m_neighbors,
+                                                        kind=kind,
+                                                        n_jobs=n_jobs)
+            case 'SVMSMOTE':
+                sampler = over_sampling.SVMSMOTE(random_state=random_state,
+                                                 sampling_strategy=sampling_strategy,
+                                                 k_neighbors=k_neighbors,
+                                                 m_neighbors=m_neighbors,
+                                                 svm_estimator=svm_estimator,
+                                                 out_step=out_step,
+                                                 n_jobs=n_jobs)
+            case 'KMeansSMOTE':
+                sampler = over_sampling.KMeansSMOTE(random_state=random_state,
+                                                    sampling_strategy=sampling_strategy,
+                                                    k_neighbors=k_neighbors,
+                                                    n_jobs=n_jobs,
+                                                    kmeans_estimator=kmeans_estimator,
+                                                    cluster_balance_threshold=cluster_balance_threshold,
+                                                    density_exponent=density_exponent)
+            case 'SMOTENC':
+                sampler = over_sampling.SMOTENC(random_state=random_state,
+                                                sampling_strategy=sampling_strategy,
+                                                k_neighbors=k_neighbors,
+                                                categorical_features=categorical_features,
+                                                n_jobs=n_jobs,
+                                                categorical_encoder=categorical_encoder)
+                changed_data, changed_labels = sampler.fit_resample(df, df[target])
+                return pd.DataFrame(changed_data, changed_labels, columns=df.columns)
+            case 'SMOTEN':
+                sampler = over_sampling.SMOTEN(random_state=random_state,
+                                               sampling_strategy=sampling_strategy,
+                                               k_neighbors=k_neighbors,
+                                               n_jobs=n_jobs,
+                                               categorical_encoder=categorical_encoder)
+
+        changed_data, changed_labels = sampler.fit_resample(df.to_numpy(), df[target].to_numpy())
+        return pd.DataFrame(changed_data, changed_labels, columns=df.columns)
 
     @decorators.try_except('pass')
     def pca(self, n_components: int, inplace=False, **kwargs):
@@ -966,22 +1184,41 @@ if __name__ == '__main__':
             print(df.detect_outliers('Tukey'))
             print(df.detect_outliers('Shovene'))
 
-        if 1:
+        if 0:
             print(DataFrame.corr_features.__name__)
             print(df.corr_features())
             print(df.corr_features(method='pearson'))
             print(df.corr_features(method='spearman'))
             print(df.corr_features(method='pearson', threshold=0.5))
 
-        if 1:
+        if 0:
             print(DataFrame.distribution.__name__)
             print(df.distribution([target]))
             print(df.distribution(df.columns.to_list()))
 
-        if 1:
+        if 0:
             print(DataFrame.variation_coefficient.__name__)
             print(df.variation_coefficient([target]))
             print(df.variation_coefficient(df.columns.to_list()))
+
+        if 1:
+            print(DataFrame.fill_na.__name__)
+
+            print(df.fill_na(0))
+            print(df.fill_na('0'))
+
+            print(df.fill_na(method='mean'))
+            print(df.fill_na(method='median'))
+            print(df.fill_na(method='mode'))
+            # print(df.fill_na(method='hmean'))
+            print(df.fill_na(method='indicator'))
+
+        if 1:
+            print(DataFrame.l1_models.__name__)
+            print(df.columns)
+            l1 = list(2 ** np.linspace(-10, 0, 10))
+            print(df.l1_importance(l1=l1, scale=True, early_stopping=True))
+            print(df.l1_importance(l1=l1, scale=True, early_stopping=True, target=target))
 
         if 0:
             pass
