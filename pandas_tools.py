@@ -1,4 +1,7 @@
 from tqdm import tqdm
+from colorama import Fore
+
+import multiprocessing as mp
 
 import pandas as pd
 import numpy as np
@@ -48,6 +51,7 @@ from sklearn.neighbors import LocalOutlierFactor
 from sklearn.linear_model import Lasso
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from catboost import CatBoostClassifier, CatBoostRegressor
 
 from sklearn.metrics import mutual_info_score
 
@@ -98,6 +102,9 @@ class DataFrame(pd.DataFrame):
 
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
         df = DataFrame()
         for column in columns:
             le = LabelEncoder()
@@ -111,6 +118,9 @@ class DataFrame(pd.DataFrame):
 
     def encode_one_hot(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n значений каждой категории в n бинарных категорий"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
         ohe = OneHotEncoder(handle_unknown='ignore')
         dummies = ohe.fit_transform(self[columns])
         df = DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
@@ -122,6 +132,9 @@ class DataFrame(pd.DataFrame):
 
     def encode_count(self, columns: list[str], drop=False, inplace=False):
         """Преобразование значений каждой категории в количество этих значений"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
         df = DataFrame()
         for column in columns:
             column_count = self[column].value_counts().to_dict()
@@ -134,6 +147,9 @@ class DataFrame(pd.DataFrame):
 
     def encode_ordinal(self, columns: list[str], drop=False, inplace=False):
         """Преобразование категориальных признаков в числовые признаки с учетом порядка или их весов"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
         df = DataFrame()
         for column in columns:
             oe = OrdinalEncoder()
@@ -146,6 +162,9 @@ class DataFrame(pd.DataFrame):
 
     def encode_target(self, columns: list[str], drop=False, inplace=False):
         """"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+
         df = DataFrame()
         for column in columns:
             te = TargetEncoder()
@@ -156,15 +175,13 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def polynomial_features(self, columns: list, degree: int, include_bias=False):
+    def polynomial_features(self, columns: list[str], degree: int, include_bias=False):
         """Полиномирование признаков"""
-
-        assert type(columns) is list, 'type(columns) is list'
-        assert len(columns) > 0, 'len(columns) > 0'
-        assert all(map(lambda col: col in self.columns, columns)), 'all(map(lambda col: col in self.columns, columns))'
-        assert type(degree) is int, 'type(degree) is int'
-        assert degree > 1, 'degree > 1'
-        assert type(include_bias) is bool, 'type(include_bias) is bool'
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
+        assert type(degree) is int
+        assert degree > 1
+        assert type(include_bias) is bool
 
         pf = PolynomialFeatures(degree=degree, include_bias=include_bias)
         df = DataFrame(pf.fit_transform(self[columns]), columns=pf.get_feature_names_out())
@@ -202,6 +219,8 @@ class DataFrame(pd.DataFrame):
 
     def vectorize_count(self, columns: list[str], drop=False, inplace=False, **kwargs):
         """Количественная векторизация токенов"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
 
         self.__assert_vectorize(**kwargs)
 
@@ -217,6 +236,8 @@ class DataFrame(pd.DataFrame):
 
     def vectorize_tf_idf(self, columns: list[str], drop=False, inplace=False, **kwargs):
         """tf-idf векторизация токенов"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, columns))
 
         self.__assert_vectorize(**kwargs)
 
@@ -339,7 +360,7 @@ class DataFrame(pd.DataFrame):
             pred = model.predict(x.values)  # предсказываем (.values необходим для анонимности данных)
             pred[pred == -1] = False  # выбросы (=-1) переименуем в False (=0)
             pred = DataFrame(pred, columns=[model.__class__.__name__])  # создаем DataFrame
-            outliers = pd.concat([outliers, pred], axis=1)  # конкатезируем выбросы по данной модели
+            outliers = pd.concat([outliers, pred], axis=1)  # конкатенируем выбросы по данной модели
 
         # вероятность НЕ выброса (адекватных данных) определяется как среднее арифметическое предсказаний всех моделей
         outliers['probability'] = outliers.apply(lambda row: row.mean(), axis=1)
@@ -366,31 +387,37 @@ class DataFrame(pd.DataFrame):
 
         return result[result >= threshold].to_dict()
 
+    @decorators.warns('ignore')
     def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs) -> list:
         """Линейные модели с разной L1-регуляризацией"""
         target = self.__get_target(**kwargs)
-        assert isiter(l1), f'{self.assert_sms} isiter(l1)'
-        assert all(isinstance(el, (float, int)) for el in l1), \
-            f'{self.assert_sms} all(isinstance(el, (float, int)) for el in l1)'
+        assert isiter(l1)
+        assert all(isinstance(el, (float, int)) for el in l1)
 
         x, y = self.feature_target_split(target=target)
         x = StandardScaler().fit_transform(x) if scale else x
 
-        result = list()
+        # TODO: multiprocessing
+        self.__l1_models = list()
         for alpha in tqdm(l1, desc='Fitting L1-models'):
-            model = Lasso(alpha=alpha).fit(x, y)
-            result.append(model)
+            model = Lasso(alpha=alpha,
+                          max_iter=kwargs.pop('max_iter', 1_000),
+                          tol=kwargs.pop('tol', 0.000_1),
+                          random_state=kwargs.pop('random_state', None))
+            model.fit(x, y)
+            self.__l1_models.append(model)
             if early_stopping and all(map(lambda c: c == 0, model.coef_)): break
-        return result
+        return self.__l1_models
 
     def l1_importance(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
-        l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
+        if not hasattr(self, '_DataFrame__l1_models'):
+            self.__l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
 
-        df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=x.columns)
+        df = DataFrame([l1_model.coef_ for l1_model in self.__l1_models], columns=x.columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
     def l1_importance_plot(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
@@ -399,16 +426,15 @@ class DataFrame(pd.DataFrame):
 
         df = self.l1_importance(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
         df.dropna(axis=0, inplace=True)
-        x = df.pop('L1')
+        x = df.pop('L1').to_numpy()
 
         plt.figure(figsize=kwargs.get('figsize', (12, 9)))
         plt.grid(kwargs.get('grid', True))
-        for column in df.columns:
-            plt.plot(x, df[column])
+        for column in df.columns: plt.plot(x, df[column])
         plt.legend(df.columns, fontsize=12)
         plt.xlabel('L1', fontsize=14)
         plt.ylabel('coef', fontsize=14)
-        plt.xlim([0, l1[x.shape[0]]])
+        plt.xlim([0, x[-1]])
         plt.show()
 
     def select_l1_features(self, n_features: int, **kwargs) -> list[str]:
@@ -693,11 +719,36 @@ class DataFrame(pd.DataFrame):
             else:
                 return x_reduced
 
+    def catboost_importance_features(self, **kwargs):
+        """Важные признаки для CatBoost"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+
+        for model in (CatBoostClassifier(), CatBoostRegressor()):
+            try:
+                model.fit(x, y)
+            except Exception as exception:
+                print(exception)
+            return pd.Series(model.feature_importances_, index=x.columns).sort_values(ascending=False)
+
+    def catboost_importance_features(self, **kwargs):
+        """Важные признаки для CatBoost на столбчатой диаграмме"""
+        '''
+        target = self.__get_target(**kwargs)
+        importance_features = self.random_forest_importance_features(target=target).sort_values(ascending=True)
+
+        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.xlabel('importance')
+        plt.ylabel('features')
+        plt.barh(importance_features.index, importance_features)
+        plt.show()
+        '''
+
     def balance(self, column_name: str, threshold: int | float):
         """Сбалансированность класса"""
-        assert column_name in self.columns, f'{self.assert_sms} column_name in {self.columns}'
-        assert type(threshold) in (int, float), f'{self.assert_sms} type(threshold) in (int, float)'
-        assert 1 < threshold, f'{self.assert_sms} 1 < threshold'
+        assert column_name in self.columns
+        assert type(threshold) in (int, float)
+        assert 1 < threshold
 
         df = self.value_counts(column_name).to_frame()
         df['fraction'] = df['count'] / len(self)
@@ -1120,33 +1171,37 @@ class DataFrame(pd.DataFrame):
 
 
 if __name__ == '__main__':
-    if 0:
+    if True:
+        from sklearn.datasets import load_breast_cancer
+
+        data = load_breast_cancer(as_frame=True)
+        df = pd.concat([data.data, data.target], axis=1)
+        df = DataFrame(df)
+        print(df)
 
         if 1:
-            target = 'toxic'
+            target = "target"
             df.target = target
 
-        if 0:
-            print(DataFrame.vectorize_count)
-            print(df.vectorize_count('comment'))
-            print(df.vectorize_count(['comment']))
-            print(df.vectorize_count(['comment'], stop_words=[]))
-            print(df.vectorize_count(['comment'], stop_words=['00', 'ёмкость']))
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.train_test_split.__name__}' + Fore.RESET)
+            df.train_test_split(test_size=0.25)
 
-            df.vectorize_count(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
-            print(df)
+        if 0:
+            print(df.isna().sum())
 
         if 1:
-            print(DataFrame.vectorize_tf_idf)
-            print(df.vectorize_tf_idf('comment'))
-            print(df.vectorize_tf_idf(['comment']))
-            print(df.vectorize_tf_idf(['comment'], stop_words=[]))
-            print(df.vectorize_tf_idf(['comment'], stop_words=['00', 'ёмкость']))
+            print(Fore.YELLOW + f'{DataFrame.l1_models.__name__}' + Fore.RESET)
+            l1 = list(2 ** np.linspace(-10, 10, 100))
+            print(df.l1_models(l1=l1, max_iter=1_000, tol=0.000_1))
+            print(df.l1_importance(l1=l1))
+            df.l1_importance_plot(l1=l1)
 
-            df.vectorize_tf_idf(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
-            print(df)
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
+            print(df.catboost_importance_features())
 
-    if 1:
+    if False:
         from sklearn.datasets import fetch_california_housing
 
         data = fetch_california_housing(as_frame=True)
@@ -1220,6 +1275,9 @@ if __name__ == '__main__':
             print(df.l1_importance(l1=l1, scale=True, early_stopping=True))
             print(df.l1_importance(l1=l1, scale=True, early_stopping=True, target=target))
 
+        if 1:
+            pass
+
         if 0:
             pass
             # print(df.find_corr_features())
@@ -1240,3 +1298,29 @@ if __name__ == '__main__':
             # print(df.select_importance_features(1))
             # print(df.select_importance_features(1.9))
             # print(df.select_importance_features(50.))
+
+    if False:
+
+        if 1:
+            target = 'toxic'
+            df.target = target
+
+        if 0:
+            print(DataFrame.vectorize_count)
+            print(df.vectorize_count('comment'))
+            print(df.vectorize_count(['comment']))
+            print(df.vectorize_count(['comment'], stop_words=[]))
+            print(df.vectorize_count(['comment'], stop_words=['00', 'ёмкость']))
+
+            df.vectorize_count(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
+            print(df)
+
+        if 1:
+            print(DataFrame.vectorize_tf_idf)
+            print(df.vectorize_tf_idf('comment'))
+            print(df.vectorize_tf_idf(['comment']))
+            print(df.vectorize_tf_idf(['comment'], stop_words=[]))
+            print(df.vectorize_tf_idf(['comment'], stop_words=['00', 'ёмкость']))
+
+            df.vectorize_tf_idf(['comment'], drop=True, inplace=True, stop_words=['00', 'ёмкость'])
+            print(df)
