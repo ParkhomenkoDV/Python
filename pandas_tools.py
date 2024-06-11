@@ -100,6 +100,11 @@ class DataFrame(pd.DataFrame):
         assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
         return target
 
+    def underline_columns(self):
+        """Замена пробелов в названии столбцов нижним подчеркиванием _"""
+        for column in self.columns:
+            self.rename(columns={column: column.replace(' ', '_')}, inplace=True)
+
     def encode_label(self, columns: list[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
         assert type(columns) in (list, tuple)
@@ -444,7 +449,6 @@ class DataFrame(pd.DataFrame):
 
         l1_importance = self.l1_importance(**kwargs).drop(['L1'], axis=1).dropna(axis=0)
 
-        l1_features = list()
         for row in (l1_importance != 0)[::-1].to_numpy():
             if row.sum() >= n_features:
                 l1_features = l1_importance.columns[row].to_list()
@@ -1180,6 +1184,12 @@ if __name__ == '__main__':
         print(df)
 
         if 1:
+            print(Fore.YELLOW + f'{DataFrame.underline_columns.__name__}' + Fore.RESET)
+            print(df.columns)
+            df.underline_columns()
+            print(df.columns)
+
+        if 1:
             target = "target"
             df.target = target
 
@@ -1196,6 +1206,7 @@ if __name__ == '__main__':
             print(df.l1_models(l1=l1, max_iter=1_000, tol=0.000_1))
             print(df.l1_importance(l1=l1))
             df.l1_importance_plot(l1=l1)
+            print(df.select_l1_features(5))
 
         if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
