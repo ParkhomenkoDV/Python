@@ -725,20 +725,20 @@ class DataFrame(pd.DataFrame):
             else:
                 return x_reduced
 
+    @property
     def categorical_features(self) -> list[str]:
         """Выявление категориальных признаков"""
         return self.select_dtypes(['object', 'category']).columns.to_list()
 
-    def catboost_importance_features(self, **kwargs) -> dict[str: float]:
+    def catboost_importance_features(self, returns='dict', **kwargs) -> dict[str: float] | object:
         """Важные признаки для CatBoost"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
-        cat_features = kwargs.pop('cat_features', self.categorical_features())
         x_train, x_test, y_train, y_test = train_test_split(x, y,  # stratify=y,  # ломает регрессию
                                                             test_size=kwargs.get('test_size', 0.25),
                                                             shuffle=True, random_state=0)
 
-        catboost_params = {'iterations': kwargs.pop('iterations', 5),  # n_estimators
+        catboost_params = {'iterations': kwargs.pop('iterations', 100),  # n_estimators
                            'learning_rate': kwargs.pop('learning_rate', 0.1),
                            # 'Logloss': бинарная классификация, 'CrossEntropy': предсказания, 'MultiClass': многокласс
                            'loss_function': kwargs.pop('loss_function', 'Logloss'),
@@ -749,17 +749,15 @@ class DataFrame(pd.DataFrame):
                            'boosting_type': kwargs.pop('boosting_type', 'Plain'),
                            'one_hot_max_size': kwargs.pop('one_hot_max_size', 20),
                            'save_snapshot': kwargs.pop('save_snapshot', False),
-                           'snapshot_file': 'snapshot.bkp',
-                           'snapshot_interval': 1,
-                           }
+                           'snapshot_file': kwargs.pop('snapshot_file', 'snapshot.bkp'),
+                           'snapshot_interval': kwargs.pop('snapshot_interval', 1)}
 
-        returns = kwargs.pop('returns', 'dict')  # TODO
         for class_model in (CatBoostClassifier, CatBoostRegressor):
             try:
                 model = class_model(**catboost_params)
                 model.fit(x_train, y_train,
                           eval_set=(x_test, y_test),
-                          cat_features=cat_features,
+                          cat_features=kwargs.pop('cat_features', self.categorical_features),
                           verbose=kwargs.pop('verbose', 1))
             except Exception as exception:
                 print(exception)
@@ -773,9 +771,11 @@ class DataFrame(pd.DataFrame):
 
     def catboost_importance_features_plot(self, **kwargs):
         """Важные признаки для CatBoost на столбчатой диаграмме"""
-        feature_importance = dict(sorted(self.catboost_importance_features(returns='dict').items(), key=lambda i: i[1]))
+        kwargs.pop('returns', None)
+        feature_importance = dict(sorted(self.catboost_importance_features(returns='dict', **kwargs).items(),
+                                         key=lambda i: i[1]))
         plt.figure(figsize=kwargs.pop('figsize', (12, len(feature_importance) / 2.54 / 1.5)))
-        plt.xlabel('catboost_importances')
+        plt.xlabel('catboost_importance')
         plt.ylabel('features')
         plt.barh(feature_importance.keys(), feature_importance.values())
         plt.show()
@@ -784,13 +784,13 @@ class DataFrame(pd.DataFrame):
         """Важные признаки для CatBoost на shap диаграмме"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
-        cat_features = kwargs.pop('cat_features', self.categorical_features())
+        cat_features = kwargs.pop('cat_features', self.categorical_features)
 
-        model = self.catboost_importance_features(returns='model')
+        kwargs.pop('returns', None)
+        model = self.catboost_importance_features(returns='model', **kwargs)
         shap_values = model.get_feature_importance(catboostPool(x, y, cat_features=cat_features),
                                                    fstr_type='ShapValues')[:, :-1]
         shap.summary_plot(shap_values, x, plot_size=(12, shap_values.shape[1] / 2.54 / 2))
-        shap.force_plot(shap.TreeExplainer(model).expected_value, shap_values, x)  # TODO
 
     def balance(self, column_name: str, threshold: int | float):
         """Сбалансированность класса"""
@@ -1259,7 +1259,9 @@ if __name__ == '__main__':
         if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
             print(df.catboost_importance_features())
-            print(df.catboost_importance_features(returns='dict'))
+            print(df.catboost_importance_features(returns='model'))
+            print(df.catboost_importance_features(iterations=300, learning_rate=0.1))
+            print(df.catboost_importance_features(iterations=3_000, learning_rate=0.01, verbose=False))
 
         if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_plot.__name__}' + Fore.RESET)
