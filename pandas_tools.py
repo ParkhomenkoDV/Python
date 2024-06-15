@@ -51,11 +51,13 @@ from sklearn.neighbors import LocalOutlierFactor
 from sklearn.linear_model import Lasso
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from catboost import CatBoostClassifier, CatBoostRegressor
+from catboost import Pool as catboostPool, CatBoostClassifier, CatBoostRegressor
 
 from sklearn.metrics import mutual_info_score
 
 from imblearn import under_sampling, over_sampling
+
+import shap
 
 '''import nltk
 
@@ -723,30 +725,72 @@ class DataFrame(pd.DataFrame):
             else:
                 return x_reduced
 
-    def catboost_importance_features(self, **kwargs):
+    def categorical_features(self) -> list[str]:
+        """Выявление категориальных признаков"""
+        return self.select_dtypes(['object', 'category']).columns.to_list()
+
+    def catboost_importance_features(self, **kwargs) -> dict[str: float]:
         """Важные признаки для CatBoost"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
+        cat_features = kwargs.pop('cat_features', self.categorical_features())
+        x_train, x_test, y_train, y_test = train_test_split(x, y,  # stratify=y,  # ломает регрессию
+                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            shuffle=True, random_state=0)
 
-        for model in (CatBoostClassifier(), CatBoostRegressor()):
+        catboost_params = {'iterations': kwargs.pop('iterations', 5),  # n_estimators
+                           'learning_rate': kwargs.pop('learning_rate', 0.1),
+                           # 'Logloss': бинарная классификация, 'CrossEntropy': предсказания, 'MultiClass': многокласс
+                           'loss_function': kwargs.pop('loss_function', 'Logloss'),
+                           'custom_loss': kwargs.pop('custom_loss', tuple()),
+                           'random_seed': kwargs.pop('random_seed', None),
+                           'use_best_model': kwargs.pop('use_best_model', True),
+                           'early_stopping_rounds': kwargs.pop('early_stopping_rounds', 20),
+                           'boosting_type': kwargs.pop('boosting_type', 'Plain'),
+                           'one_hot_max_size': kwargs.pop('one_hot_max_size', 20),
+                           'save_snapshot': kwargs.pop('save_snapshot', False),
+                           'snapshot_file': 'snapshot.bkp',
+                           'snapshot_interval': 1,
+                           }
+
+        returns = kwargs.pop('returns', 'dict')  # TODO
+        for class_model in (CatBoostClassifier, CatBoostRegressor):
             try:
-                model.fit(x, y)
+                model = class_model(**catboost_params)
+                model.fit(x_train, y_train,
+                          eval_set=(x_test, y_test),
+                          cat_features=cat_features,
+                          verbose=kwargs.pop('verbose', 1))
             except Exception as exception:
                 print(exception)
-            return pd.Series(model.feature_importances_, index=x.columns).sort_values(ascending=False)
 
-    def catboost_importance_features(self, **kwargs):
+            if returns == 'dict':
+                return model.get_feature_importance(prettified=True).set_index('Feature Id')['Importances'].to_dict()
+            elif returns == 'model':
+                return model
+            else:
+                raise
+
+    def catboost_importance_features_plot(self, **kwargs):
         """Важные признаки для CatBoost на столбчатой диаграмме"""
-        '''
-        target = self.__get_target(**kwargs)
-        importance_features = self.random_forest_importance_features(target=target).sort_values(ascending=True)
-
-        plt.figure(figsize=kwargs.get('figsize', (9, 9)))
-        plt.xlabel('importance')
+        feature_importance = dict(sorted(self.catboost_importance_features(returns='dict').items(), key=lambda i: i[1]))
+        plt.figure(figsize=kwargs.pop('figsize', (12, len(feature_importance) / 2.54 / 1.5)))
+        plt.xlabel('catboost_importances')
         plt.ylabel('features')
-        plt.barh(importance_features.index, importance_features)
+        plt.barh(feature_importance.keys(), feature_importance.values())
         plt.show()
-        '''
+
+    def catboost_importance_features_shap(self, **kwargs):
+        """Важные признаки для CatBoost на shap диаграмме"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+        cat_features = kwargs.pop('cat_features', self.categorical_features())
+
+        model = self.catboost_importance_features(returns='model')
+        shap_values = model.get_feature_importance(catboostPool(x, y, cat_features=cat_features),
+                                                   fstr_type='ShapValues')[:, :-1]
+        shap.summary_plot(shap_values, x, plot_size=(12, shap_values.shape[1] / 2.54 / 2))
+        shap.force_plot(shap.TreeExplainer(model).expected_value, shap_values, x)  # TODO
 
     def balance(self, column_name: str, threshold: int | float):
         """Сбалансированность класса"""
@@ -1002,7 +1046,9 @@ class DataFrame(pd.DataFrame):
 
         pca = PrincipalComponentAnalysis(n_components=n_components)
         x_reduced = DataFrame(pca.fit_transform(x, y))
-        print(f'Объем сохраненной и потерянной информации: {pca.explained_variance_ratio_}')  # потеря до 20% приемлема
+        print(
+            f'Объем вариации информации: {pca.explained_variance_ratio_}')  # = объем важных данных по осям (потеря до 20% приемлема)
+        print(f'Сингулярные значения: {pca.singular_values_}')
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
                                                             test_size=kwargs.get('test_size', 0.25),
                                                             shuffle=True, random_state=0)
@@ -1195,12 +1241,14 @@ if __name__ == '__main__':
 
         if 1:
             print(Fore.YELLOW + f'{DataFrame.train_test_split.__name__}' + Fore.RESET)
-            df.train_test_split(test_size=0.25)
+            df_train, df_test = df.train_test_split(test_size=0.25)
+            print(f'df_train.shape: {df_train.shape}')
+            print(f'df_test.shape: {df_test.shape}')
 
         if 0:
             print(df.isna().sum())
 
-        if 1:
+        if 0:
             print(Fore.YELLOW + f'{DataFrame.l1_models.__name__}' + Fore.RESET)
             l1 = list(2 ** np.linspace(-10, 10, 100))
             print(df.l1_models(l1=l1, max_iter=1_000, tol=0.000_1))
@@ -1211,6 +1259,15 @@ if __name__ == '__main__':
         if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
             print(df.catboost_importance_features())
+            print(df.catboost_importance_features(returns='dict'))
+
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_plot.__name__}' + Fore.RESET)
+            df.catboost_importance_features_plot()
+
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_shap.__name__}' + Fore.RESET)
+            df.catboost_importance_features_shap()
 
     if False:
         from sklearn.datasets import fetch_california_housing
