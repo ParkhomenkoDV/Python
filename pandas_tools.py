@@ -1,3 +1,4 @@
+import os
 from tqdm import tqdm
 from colorama import Fore
 
@@ -746,51 +747,109 @@ class DataFrame(pd.DataFrame):
                            'random_seed': kwargs.pop('random_seed', None),
                            'use_best_model': kwargs.pop('use_best_model', True),
                            'early_stopping_rounds': kwargs.pop('early_stopping_rounds', 20),
-                           'boosting_type': kwargs.pop('boosting_type', 'Plain'),
+                           'boosting_type': kwargs.pop('boosting_type', 'Plain' if x.shape[0] >= 10_000 else 'Ordered'),
                            'one_hot_max_size': kwargs.pop('one_hot_max_size', 20),
                            'save_snapshot': kwargs.pop('save_snapshot', False),
                            'snapshot_file': kwargs.pop('snapshot_file', 'snapshot.bkp'),
-                           'snapshot_interval': kwargs.pop('snapshot_interval', 1)}
+                           'snapshot_interval': kwargs.pop('snapshot_interval', 1),
+                           'task_type': "CPU"}
 
         for class_model in (CatBoostClassifier, CatBoostRegressor):
             try:
-                model = class_model(**catboost_params)
-                model.fit(x_train, y_train,
-                          eval_set=(x_test, y_test),
-                          cat_features=kwargs.pop('cat_features', self.categorical_features),
-                          verbose=kwargs.pop('verbose', 1))
+                self.__catboost_model = class_model(**catboost_params)
+                self.__catboost_model.fit(x_train, y_train,
+                                          eval_set=(x_test, y_test),
+                                          cat_features=kwargs.pop('cat_features', self.categorical_features),
+                                          verbose=kwargs.pop('verbose', 1))
             except Exception as exception:
                 print(exception)
 
             if returns == 'dict':
-                return model.get_feature_importance(prettified=True).set_index('Feature Id')['Importances'].to_dict()
+                return self.__catboost_model.get_feature_importance(prettified=True) \
+                    .set_index('Feature Id')['Importances'].to_dict()
             elif returns == 'model':
-                return model
+                return self.__catboost_model
             else:
                 raise
 
-    def catboost_importance_features_plot(self, **kwargs):
+    def catboost_importance_features_plot(self, **kwargs) -> None:
         """Важные признаки для CatBoost на столбчатой диаграмме"""
         kwargs.pop('returns', None)
-        feature_importance = dict(sorted(self.catboost_importance_features(returns='dict', **kwargs).items(),
-                                         key=lambda i: i[1]))
+        feature_importance = self.catboost_importance_features(returns='dict', **kwargs)
+        feature_importance = dict(filter(lambda item: item[1] != 0, feature_importance.items()))
+        feature_importance = dict(sorted(feature_importance.items(), key=lambda i: i[1]))
         plt.figure(figsize=kwargs.pop('figsize', (12, len(feature_importance) / 2.54 / 1.5)))
-        plt.xlabel('catboost_importance')
-        plt.ylabel('features')
-        plt.barh(feature_importance.keys(), feature_importance.values())
+        plt.xlabel('catboost_importance', fontweight='bold')
+        plt.ylabel('features', fontweight='bold')
+        plt.barh(feature_importance.keys(), feature_importance.values(), label='importance non-zero features')
+        plt.legend(loc='lower right')
+        plt.grid(kwargs.pop('grid', True))
         plt.show()
 
-    def catboost_importance_features_shap(self, **kwargs):
+    def catboost_importance_features_shap(self, **kwargs) -> None:
         """Важные признаки для CatBoost на shap диаграмме"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
         cat_features = kwargs.pop('cat_features', self.categorical_features)
 
         kwargs.pop('returns', None)
-        model = self.catboost_importance_features(returns='model', **kwargs)
-        shap_values = model.get_feature_importance(catboostPool(x, y, cat_features=cat_features),
-                                                   fstr_type='ShapValues')[:, :-1]
+        if not hasattr(self, '_DataFrame__catboost_model'):
+            self.__catboost_model = self.catboost_importance_features(returns='model', **kwargs)
+        shap_values = self.__catboost_model.get_feature_importance(catboostPool(x, y, cat_features=cat_features),
+                                                                   fstr_type='ShapValues')[:, :-1]
         shap.summary_plot(shap_values, x, plot_size=(12, shap_values.shape[1] / 2.54 / 2))
+
+    '''
+    def catboost_feature_evaluation(self, **kwargs):
+        """Оценка"""
+        target = self.__get_target(**kwargs)
+        x, y = self.feature_target_split(target=target)
+        cat_features = kwargs.pop('cat_features', self.categorical_features)
+        df_train, df_test = self.train_test_split(test_size=kwargs.get('test_size', 0.25), shuffle=True)
+
+        from catboost.eval.catboost_evaluation import CatboostEvaluation
+        from catboost.eval.evaluation_result import ScoreType, ScoreConfig
+
+        dataset_dir = './dataframe'
+        if not os.path.exists(dataset_dir): os.makedirs(dataset_dir)
+
+        df_train.to_csv(os.path.join(dataset_dir, 'df_train.tsv'), index=False, sep='\t', header=False)
+        df_test.to_csv(os.path.join(dataset_dir, 'df_test.tsv'), index=False, sep='\t', header=False)
+
+        from catboost.utils import create_cd
+        feature_names = dict()
+        for column, name in enumerate(df_train):
+            if column == 0:
+                continue
+            feature_names[column] = name
+
+        create_cd(
+            label=0,
+            cat_features=list(range(1, df_train.columns.shape[0])),
+            feature_names=feature_names,
+            output_path=os.path.join(dataset_dir, 'train.cd')
+        )
+
+        evaluator = CatboostEvaluation('dataframe/df_train.tsv',
+                                       fold_size=self.shape[0] // 4,  # <= 50% of dataset
+                                       fold_count=2,
+                                       column_description='dataframe/df_test.tsv',
+                                       partition_random_seed=0)
+
+        learn_config = {'iterations': kwargs.pop('iterations', 100),  # n_estimators,
+                        'learning_rate': kwargs.pop('learning_rate', 0.1),
+                        'random_seed': kwargs.pop('random_seed', None),
+                        'verbose': kwargs.pop('verbose', 1),
+                        'loss_function': 'Logloss',
+                        'boosting_type': 'Plain'}
+
+        result = evaluator.eval_features(learn_config=learn_config,
+                                         eval_metrics=['Logloss', 'Accuracy'],
+                                         features_to_eval=[1, 2, 3])
+
+        logloss_result = result.get_metric_results('Logloss')
+        logloss_result.get_baseline_comparison(ScoreConfig(ScoreType.Rel, overfit_iterations_info=False))
+        return logloss_result'''
 
     def balance(self, column_name: str, threshold: int | float):
         """Сбалансированность класса"""
@@ -1256,20 +1315,24 @@ if __name__ == '__main__':
             df.l1_importance_plot(l1=l1)
             print(df.select_l1_features(5))
 
-        if 1:
+        if 0:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
             print(df.catboost_importance_features())
             print(df.catboost_importance_features(returns='model'))
-            print(df.catboost_importance_features(iterations=300, learning_rate=0.1))
+            print(df.catboost_importance_features(iterations=300, learning_rate=0.1, verbose=30))
             print(df.catboost_importance_features(iterations=3_000, learning_rate=0.01, verbose=False))
 
         if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_plot.__name__}' + Fore.RESET)
-            df.catboost_importance_features_plot()
+            df.catboost_importance_features_plot(verbose=10)
 
-        if 1:
+        if 0:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_shap.__name__}' + Fore.RESET)
-            df.catboost_importance_features_shap()
+            df.catboost_importance_features_shap(verbose=20)
+
+        if 0:
+            print(Fore.YELLOW + f'{DataFrame.catboost_feature_evaluation.__name__}' + Fore.RESET)
+            print(df.catboost_feature_evaluation())
 
     if False:
         from sklearn.datasets import fetch_california_housing
