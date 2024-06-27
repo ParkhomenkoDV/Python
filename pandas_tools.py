@@ -105,10 +105,9 @@ class DataFrame(pd.DataFrame):
 
     def underline_columns(self):
         """Замена пробелов в названии столбцов нижним подчеркиванием _"""
-        for column in self.columns:
-            self.rename(columns={column: column.replace(' ', '_')}, inplace=True)
+        for column in self.columns: self.rename(columns={column: column.replace(' ', '_')}, inplace=True)
 
-    def encode_label(self, columns: list[str], drop=False, inplace=False):
+    def encode_label(self, columns: list[str] | tuple[str], drop=False, inplace=False):
         """Преобразование n категорий в числа от 1 до n"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -124,7 +123,7 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_one_hot(self, columns: list[str], drop=False, inplace=False):
+    def encode_one_hot(self, columns: list[str] | tuple[str], drop=False, inplace=False):
         """Преобразование n значений каждой категории в n бинарных категорий"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -138,7 +137,7 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_count(self, columns: list[str], drop=False, inplace=False):
+    def encode_count(self, columns: list[str] | tuple[str], drop=False, inplace=False):
         """Преобразование значений каждой категории в количество этих значений"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -153,7 +152,7 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_ordinal(self, columns: list[str], drop=False, inplace=False):
+    def encode_ordinal(self, columns: list[str] | tuple[str], drop=False, inplace=False):
         """Преобразование категориальных признаков в числовые признаки с учетом порядка или их весов"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -168,7 +167,7 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def encode_target(self, columns: list[str], drop=False, inplace=False):
+    def encode_target(self, columns: list[str] | tuple[str], drop=False, inplace=False):
         """"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -183,7 +182,7 @@ class DataFrame(pd.DataFrame):
         else:
             return df
 
-    def polynomial_features(self, columns: list[str], degree: int, include_bias=False):
+    def polynomial_features(self, columns: list[str] | tuple[str], degree: int, include_bias=False):
         """Полиномирование признаков"""
         assert type(columns) in (list, tuple)
         assert all(map(lambda column: column in self.columns, columns))
@@ -376,6 +375,24 @@ class DataFrame(pd.DataFrame):
         outliers['outlier'] = outliers['probability'] < (1 - threshold)
         return self[outliers['outlier']].sort_index()
 
+    def confidence_interval(self, columns: list[str] | tuple[str], confidence: float) -> dict[str: tuple]:
+        """Доверительный интервал"""
+        assert type(columns) in (list, tuple)
+        assert all(map(lambda column: column in self.columns, self.columns))
+        assert type(confidence) is float and 0 <= confidence <= 1
+
+        result = dict()
+        for column in columns:
+            n = len(self[column])
+            assert 30 < n  # предел верности формулы
+            mean, sem = np.mean(self[column]), scipy.stats.sem(self[column])  # = sigma/sqrt(n)
+            if self.distribution([column])[column]['normal']:
+                l, u = scipy.stats.norm.interval(confidence=confidence, loc=mean, scale=sem)
+            else:
+                l, u = scipy.stats.t.interval(confidence=confidence, loc=mean, scale=sem, df=n - 1)
+            result[column] = l, mean, u
+        return result
+
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
         assert type(method) is str
@@ -395,7 +412,15 @@ class DataFrame(pd.DataFrame):
 
         return result[result >= threshold].to_dict()
 
-    @decorators.warns('ignore')
+    def fit_model(self, x, y, alpha, kwargs):
+        model = Lasso(alpha=alpha,
+                      max_iter=kwargs.pop('max_iter', 1_000),
+                      tol=kwargs.pop('tol', 0.00_1),
+                      random_state=kwargs.pop('random_state', None))
+        model.fit(x, y)
+        return model  # , model.coef_ != 0
+
+    # @decorators.warns('ignore')
     def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs) -> list:
         """Линейные модели с разной L1-регуляризацией"""
         target = self.__get_target(**kwargs)
@@ -404,6 +429,12 @@ class DataFrame(pd.DataFrame):
 
         x, y = self.feature_target_split(target=target)
         x = StandardScaler().fit_transform(x) if scale else x
+
+        with mp.Pool(4) as pool:
+            models = pool.starmap(self.fit_model, [(x, y, alpha, kwargs) for alpha in l1])
+
+        self.__l1_models = [m[0] for m in models]
+        return self.__l1_models
 
         # TODO: multiprocessing
         self.__l1_models = list()
@@ -438,6 +469,7 @@ class DataFrame(pd.DataFrame):
 
         plt.figure(figsize=kwargs.get('figsize', (12, 9)))
         plt.grid(kwargs.get('grid', True))
+        plt.title(target, fontsize=14, fontweight='bold')
         for column in df.columns: plt.plot(x, df[column])
         plt.legend(df.columns, fontsize=12)
         plt.xlabel('L1', fontsize=14)
@@ -478,6 +510,8 @@ class DataFrame(pd.DataFrame):
         mutual_info_score = self.mutual_info_score(**kwargs).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.grid(kwargs.get('grid', True))
+        plt.title(target, fontsize=14, fontweight='bold')
         plt.xlabel('mutual info score')
         plt.ylabel('features')
         plt.barh(mutual_info_score.index, mutual_info_score)
@@ -514,6 +548,8 @@ class DataFrame(pd.DataFrame):
         permutation_importance = self.permutation_importance(**kwargs).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.grid(kwargs.get('grid', True))
+        plt.title(target, fontsize=14, fontweight='bold')
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(permutation_importance.index, permutation_importance)
@@ -549,6 +585,8 @@ class DataFrame(pd.DataFrame):
         importance_features = self.random_forest_importance_features(target=target).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
+        plt.grid(kwargs.get('grid', True))
+        plt.title(target, fontsize=14, fontweight='bold')
         plt.xlabel('importance')
         plt.ylabel('features')
         plt.barh(importance_features.index, importance_features)
@@ -851,13 +889,13 @@ class DataFrame(pd.DataFrame):
         logloss_result.get_baseline_comparison(ScoreConfig(ScoreType.Rel, overfit_iterations_info=False))
         return logloss_result'''
 
-    def balance(self, column_name: str, threshold: int | float):
+    def balance(self, column: str, threshold: int | float):
         """Сбалансированность класса"""
-        assert column_name in self.columns
+        assert column in self.columns
         assert type(threshold) in (int, float)
-        assert 1 < threshold
+        assert 1 <= threshold
 
-        df = self.value_counts(column_name).to_frame()
+        df = self.value_counts(column).to_frame('count')
         df['fraction'] = df['count'] / len(self)
         df['balance'] = df['count'].max() / df['count'].min() <= threshold
         '''
@@ -1251,7 +1289,7 @@ class DataFrame(pd.DataFrame):
         """Проверка параметров разбиения"""
 
         random_state = kwargs.get('random_state', None)
-        assert random_state is None or type(random_state) is int, 'random_state is None or type(random_state) is int'
+        assert random_state is None or type(random_state) is int
 
     def train_test_split(self, test_size, shuffle: bool = True, **kwargs):
         """Разделение DataFrame на тренировочный и тестовый"""
@@ -1309,7 +1347,7 @@ if __name__ == '__main__':
 
         if 0:
             print(Fore.YELLOW + f'{DataFrame.l1_models.__name__}' + Fore.RESET)
-            l1 = list(2 ** np.linspace(-10, 10, 100))
+            l1 = list(2 ** np.linspace(-10, 0, 1_000))
             print(df.l1_models(l1=l1, max_iter=1_000, tol=0.000_1))
             print(df.l1_importance(l1=l1))
             df.l1_importance_plot(l1=l1)
@@ -1322,7 +1360,7 @@ if __name__ == '__main__':
             print(df.catboost_importance_features(iterations=300, learning_rate=0.1, verbose=30))
             print(df.catboost_importance_features(iterations=3_000, learning_rate=0.01, verbose=False))
 
-        if 1:
+        if 0:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_plot.__name__}' + Fore.RESET)
             df.catboost_importance_features_plot(verbose=10)
 
@@ -1333,6 +1371,10 @@ if __name__ == '__main__':
         if 0:
             print(Fore.YELLOW + f'{DataFrame.catboost_feature_evaluation.__name__}' + Fore.RESET)
             print(df.catboost_feature_evaluation())
+
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.confidence_interval.__name__}' + Fore.RESET)
+            print(df.confidence_interval(['radius_error', 'mean_radius'], 0.99))
 
     if False:
         from sklearn.datasets import fetch_california_housing
