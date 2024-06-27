@@ -1,4 +1,3 @@
-import os
 from tqdm import tqdm
 from colorama import Fore
 
@@ -1239,11 +1238,37 @@ class DataFrame(pd.DataFrame):
         else:
             return x_reduced
 
+    def categoryplot(self, cat, **kwargs):
+        """Построение столбчатой диаграммы категориальных признаков"""
+        target = self.__get_target(**kwargs)
+        row, col = kwargs.pop('row', None), kwargs.pop('col', None)
+        faced = sns.FacetGrid(self, hue=target, aspect=4, row=row, col=col)
+        faced.map(sns.kdeplot, cat, shade=True)
+        faced.set(xlim=(0, self[cat].max()))
+        faced.add_legend()
+        plt.show()
+
+    def categoryplot2(self, cat, **kwargs):
+        """Построение столбчатой диаграммы категориальных признаков"""
+        target = self.__get_target(**kwargs)
+        row, col = kwargs.pop('row', None), kwargs.pop('col', None)
+        faced = sns.FacetGrid(self, row=row, col=col)
+        faced.map(sns.barplot, cat, target)
+        faced.add_legend()
+        plt.show()
+
     def corrplot(self, fmt=3, **kwargs):
         """Тепловая карта матрицы корреляции"""
+        assert type(fmt) is int and fmt >= 0
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
         plt.title(kwargs.get('title', 'corrplot'), fontsize=16, fontweight='bold')
-        sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f')
+        corr = self.corr()
+        n = corr.shape[0]
+        for i in range(n):
+            for j in range(i + 1, n):
+                corr.iloc[i, j] = -1
+        sns.heatmap(corr, annot=True, fmt=f'.{fmt}f', cmap='RdYlGn')
+        plt.show()
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'corrplot'), file_extension='png')
 
     def pairplot(self, **kwargs):
@@ -1375,6 +1400,10 @@ if __name__ == '__main__':
         if 1:
             print(Fore.YELLOW + f'{DataFrame.confidence_interval.__name__}' + Fore.RESET)
             print(df.confidence_interval(['radius_error', 'mean_radius'], 0.99))
+
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.corrplot.__name__}' + Fore.RESET)
+            df.corrplot(2)
 
     if False:
         from sklearn.datasets import fetch_california_housing
