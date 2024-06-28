@@ -392,6 +392,37 @@ class DataFrame(pd.DataFrame):
             result[column] = l, mean, u
         return result
 
+    def ABtest(self, A: str, B: str, relationship: bool, method: str = 'ttest') -> tuple:
+        """AB-тест = сравнение вариации двух выборок (есть ли отличия?)"""
+        # pvalue = адекватность 0 гипотезы. Чем меньше pvalue, тем более вероятна верна 1 гипотеза
+        # "pvalue превоскходит уровень значимости 5%" = pvalue < 5%! Смирись с этим
+        # по pvalue НЕЛЬЗЯ сравниваться количественно!!! pvalue говорит: "отклонем/принимаем 0 гипотезу!"
+        assert A in self.columns and B in self.columns
+        assert type(relationship) is bool
+        assert type(method) is str
+        method = method.strip().lower()
+
+        for column in (A, B):
+            if not self.distribution([column])[column]['normal']:
+                print(Fore.RED + f'Выборка {column} ненормальная!' + Fore.RESET)
+                print(Fore.YELLOW + f'Рекомендуется numpy.log2(abs(DataFrame.{column}) + 1)' + Fore.RESET)
+                return None, None
+
+        if relationship:
+            return scipy.stats.ttest_rel(self[A], self[B])
+        else:
+            if method == 'ttest':
+                return scipy.stats.ttest_ind(self[A], self[B],
+                                             equal_var=False)  # для выборок с разной дисперсией
+            elif method == 'levene':
+                return scipy.stats.levene(self[A], self[B])
+            elif method == 'mannwhitneyu':
+                return scipy.stats.mannwhitneyu(self[A], self[B])
+            elif method == 'chi2':
+                return scipy.stats.chi2_contingency(self[[A, B]].values)
+            else:
+                raise Exception('method in ("ttest", "levene")')
+
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
         assert type(method) is str
