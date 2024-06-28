@@ -411,7 +411,7 @@ class DataFrame(pd.DataFrame):
 
         return result[result >= threshold].to_dict()
 
-    def fit_model(self, x, y, alpha, kwargs):
+    def __fit_l1_model(self, x, y, alpha, kwargs):
         model = Lasso(alpha=alpha,
                       max_iter=kwargs.pop('max_iter', 1_000),
                       tol=kwargs.pop('tol', 0.00_1),
@@ -430,7 +430,7 @@ class DataFrame(pd.DataFrame):
         x = StandardScaler().fit_transform(x) if scale else x
 
         with mp.Pool(4) as pool:
-            models = pool.starmap(self.fit_model, [(x, y, alpha, kwargs) for alpha in l1])
+            models = pool.starmap(self.__fit_l1_model, [(x, y, alpha, kwargs) for alpha in l1])
 
         self.__l1_models = [m[0] for m in models]
         return self.__l1_models
