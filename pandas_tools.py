@@ -402,18 +402,19 @@ class DataFrame(pd.DataFrame):
         assert type(method) is str
         method = method.strip().lower()
 
-        for column in (A, B):
-            if not self.distribution([column])[column]['normal']:
-                print(Fore.RED + f'Выборка {column} ненормальная!' + Fore.RESET)
-                print(Fore.YELLOW + f'Рекомендуется numpy.log2(abs(DataFrame.{column}) + 1)' + Fore.RESET)
-                return None, None
-
-        if relationship:
-            return scipy.stats.ttest_rel(self[A], self[B])
-        else:
-            if method == 'ttest':
+        if self.distribution([A])[A]['normal'] and self.distribution([B])[B]['normal']:
+            if relationship:
+                return scipy.stats.ttest_rel(self[A], self[B])
+            else:
                 return scipy.stats.ttest_ind(self[A], self[B],
                                              equal_var=False)  # для выборок с разной дисперсией
+        else:
+            if method == 'ttest':
+                for column in (A, B):
+                    if not self.distribution([column])[column]['normal']:
+                        print(Fore.RED + f'Выборка {column} ненормальная!' + Fore.RESET)
+                        print(Fore.YELLOW + f'Рекомендуется numpy.log2(abs(DataFrame.{column}) + 1)' + Fore.RESET)
+                        return None, None
             elif method == 'levene':
                 return scipy.stats.levene(self[A], self[B])
             elif method == 'mannwhitneyu':
@@ -421,7 +422,7 @@ class DataFrame(pd.DataFrame):
             elif method == 'chi2':
                 return scipy.stats.chi2_contingency(self[[A, B]].values)
             else:
-                raise Exception('method in ("ttest", "levene")')
+                raise Exception('method not in ("ttest", "levene", "mannwhitneyu", "chi2")')
 
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
