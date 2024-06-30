@@ -395,8 +395,8 @@ class DataFrame(pd.DataFrame):
             result[column] = l, mean, u
         return result
 
-    def ABtest(self, A: str, B: str, relationship: bool, method: str = 'ttest') -> tuple:
-        """AB-тест = сравнение вариации двух выборок (есть ли отличия?)"""
+    def test(self, A: str, B: str, relationship: bool, method: str = 'ttest') -> tuple:
+        """Тест-сравнение вариации двух выборок (есть ли отличия?)"""
         # pvalue = адекватность 0 гипотезы. Чем меньше pvalue, тем более вероятна верна 1 гипотеза
         # "pvalue превоскходит уровень значимости 5%" = pvalue < 5%! Смирись с этим
         # по pvalue НЕЛЬЗЯ сравниваться количественно!!! pvalue говорит: "отклонем/принимаем 0 гипотезу!"
@@ -412,7 +412,7 @@ class DataFrame(pd.DataFrame):
                 return stats.ttest_ind(self[A], self[B],
                                        equal_var=False)  # для выборок с разной дисперсией
         else:
-            if method == 'ttest':
+            if method == 't':
                 for column in (A, B):
                     if not self.distribution([column])[column]['normal']:
                         print(Fore.RED + f'Выборка {column} ненормальная!' + Fore.RESET)
@@ -425,9 +425,9 @@ class DataFrame(pd.DataFrame):
             elif method == 'chi2':
                 return stats.chi2_contingency(self[[A, B]].values)  # для количественных выборок!!!
             else:
-                raise Exception('method not in ("ttest", "levene", "mannwhitneyu", "chi2")')
+                raise Exception('method not in ("t", "levene", "mannwhitneyu", "chi2")')
 
-    def analysis_of_variance(self, columns: list[str] | tuple[str], method: str = 'f'):
+    def variance_analysis(self, columns: list[str] | tuple[str], method: str = 'f'):
         """Дисперсионный анализ"""
         assert all(map(lambda column: column in self.columns, columns))
         assert type(method) is str
@@ -437,7 +437,7 @@ class DataFrame(pd.DataFrame):
             if method == 'f':
                 return stats.f_oneway(*[self[column] for column in columns])  # f, pvalue
             elif method == 'tukey':
-                return stats.pairwise_tukey(*[self[column] for column in columns])  # DataFrame
+                return stats.pairwise_tukey(*[self[column] for column in columns])  # DataFrame['reject']
             else:
                 raise Exception('method not in ("f", "tukey")')
         else:
@@ -445,6 +445,8 @@ class DataFrame(pd.DataFrame):
 
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
+        # Очень чувствительные к выбросам!!!
+
         assert type(method) is str
         method = method.strip().lower()
         assert method in ('pearson', 'kendall', 'spearman')
