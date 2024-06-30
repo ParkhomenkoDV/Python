@@ -5,7 +5,7 @@ import multiprocessing as mp
 
 import pandas as pd
 import numpy as np
-import scipy
+from scipy import stats, special
 
 # библиотеки визуализации
 import matplotlib.pyplot as plt
@@ -275,7 +275,7 @@ class DataFrame(pd.DataFrame):
                 case 'mode':
                     df = self.fillna(self.mode())
                 case 'hmean':
-                    df = self.fillna(pd.Series([scipy.stats.hmean(col[~np.isnan(col)]) for col in self.values.T],
+                    df = self.fillna(pd.Series([stats.hmean(col[~np.isnan(col)]) for col in self.values.T],
                                                index=self.columns))
                 case 'indicator':
                     temple_df = pd.DataFrame(self.isna().astype(int).to_numpy(),
@@ -308,8 +308,11 @@ class DataFrame(pd.DataFrame):
 
         result = dict()
         for column in columns:
-            skew, kurtosis = self[column].skew(), self[column].kurtosis()
-            result[column] = {'skew': skew, 'kurtosis': kurtosis, 'normal': abs(skew) <= 2 and abs(kurtosis) <= 7}
+            skew, kurtosis = self[column].skew(), self[column].kurtosis()  # перекос и острота
+            _, shapiro_pvalue = stats.shapiro(self[column])  # Шапиро
+            _, ks_pvalue = stats.kstest(self[column], 'norm')  # Колмогоров-Смирнов
+            result[column] = {'skew': skew, 'kurtosis': kurtosis, 'normal': abs(skew) <= 2 and abs(kurtosis) <= 7,
+                              'shapiro_pvalue': shapiro_pvalue, 'ks_pvalue': ks_pvalue}
         return result
 
     def variation_coefficient(self, columns: list[str] | tuple[str]) -> dict[str:float]:
@@ -337,7 +340,7 @@ class DataFrame(pd.DataFrame):
             elif method == 'shovene':
                 mean = self[col].mean()
                 std = self[col].std()
-                d = self[scipy.special.erfc(abs(self[col] - mean) / std) < 1 / (2 * len(self[col]))]
+                d = self[special.erfc(abs(self[col] - mean) / std) < 1 / (2 * len(self[col]))]
                 outliers = pd.concat([outliers, d]).drop_duplicates().sort_index()
             else:
                 raise Exception('method in ("Sigma", "Tukey", "Shovene")')
@@ -384,11 +387,11 @@ class DataFrame(pd.DataFrame):
         for column in columns:
             n = len(self[column])
             assert 30 < n  # предел верности формулы
-            mean, sem = np.mean(self[column]), scipy.stats.sem(self[column])  # = sigma/sqrt(n)
+            mean, sem = np.mean(self[column]), stats.sem(self[column])  # = sigma/sqrt(n)
             if self.distribution([column])[column]['normal']:
-                l, u = scipy.stats.norm.interval(confidence=confidence, loc=mean, scale=sem)
+                l, u = stats.norm.interval(confidence=confidence, loc=mean, scale=sem)
             else:
-                l, u = scipy.stats.t.interval(confidence=confidence, loc=mean, scale=sem, df=n - 1)
+                l, u = stats.t.interval(confidence=confidence, loc=mean, scale=sem, df=n - 1)
             result[column] = l, mean, u
         return result
 
@@ -404,10 +407,10 @@ class DataFrame(pd.DataFrame):
 
         if self.distribution([A])[A]['normal'] and self.distribution([B])[B]['normal']:
             if relationship:
-                return scipy.stats.ttest_rel(self[A], self[B])
+                return stats.ttest_rel(self[A], self[B])
             else:
-                return scipy.stats.ttest_ind(self[A], self[B],
-                                             equal_var=False)  # для выборок с разной дисперсией
+                return stats.ttest_ind(self[A], self[B],
+                                       equal_var=False)  # для выборок с разной дисперсией
         else:
             if method == 'ttest':
                 for column in (A, B):
@@ -416,13 +419,29 @@ class DataFrame(pd.DataFrame):
                         print(Fore.YELLOW + f'Рекомендуется numpy.log2(abs(DataFrame.{column}) + 1)' + Fore.RESET)
                         return None, None
             elif method == 'levene':
-                return scipy.stats.levene(self[A], self[B])
+                return stats.levene(self[A], self[B])
             elif method == 'mannwhitneyu':
-                return scipy.stats.mannwhitneyu(self[A], self[B])
+                return stats.mannwhitneyu(self[A], self[B])
             elif method == 'chi2':
-                return scipy.stats.chi2_contingency(self[[A, B]].values)
+                return stats.chi2_contingency(self[[A, B]].values)  # для количественных выборок!!!
             else:
                 raise Exception('method not in ("ttest", "levene", "mannwhitneyu", "chi2")')
+
+    def analysis_of_variance(self, columns: list[str] | tuple[str], method: str = 'f'):
+        """Дисперсионный анализ"""
+        assert all(map(lambda column: column in self.columns, columns))
+        assert type(method) is str
+        method = method.strip().lower()
+
+        if all(map(lambda column: self.distribution([column])[column]['normal'], columns)):
+            if method == 'f':
+                return stats.f_oneway(*[self[column] for column in columns])  # f, pvalue
+            elif method == 'tukey':
+                return stats.pairwise_tukey(*[self[column] for column in columns])  # DataFrame
+            else:
+                raise Exception('method not in ("f", "tukey")')
+        else:
+            return stats.kruskal(*[self[column] for column in columns])
 
     def corr_features(self, method='pearson', threshold: float = 0.85) -> dict[tuple[str]:float]:
         """Линейно-независимые признаки"""
