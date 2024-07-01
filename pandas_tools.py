@@ -79,14 +79,19 @@ class DataFrame(pd.DataFrame):
 
     @classmethod
     def version(cls) -> str:
-        version = 5.2
-        print('return DataFrame from df["column""]')
+        version = '6.0'
+        print('WOE')
 
         return version
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
         self.__target = ''  # имя целевой колонки
+
+    def __getitem__(self, item):
+        """Возвращение DataFrame типа DataFrame от колонок"""
+        # assert в родительском классе
+        return DataFrame(super().__getitem__(item))
 
     @property
     def target(self) -> str:
@@ -403,7 +408,7 @@ class DataFrame(pd.DataFrame):
             result[column] = l, mean, u
         return result
 
-    def test(self, A: str, B: str, relationship: bool, method: str = 'ttest') -> tuple:
+    def test(self, A: str, B: str, relationship: bool, method: str = 't') -> tuple:
         """Тест-сравнение вариации двух выборок (есть ли отличия?)"""
         # pvalue = адекватность 0 гипотезы. Чем меньше pvalue, тем более вероятна верна 1 гипотеза
         # "pvalue превосходит уровень значимости 5%" = pvalue < 5%! Смирись с этим
@@ -567,6 +572,7 @@ class DataFrame(pd.DataFrame):
 
     def mutual_info_score_plot(self, **kwargs):
         """График взаимной информации корреляции"""
+        target = self.__get_target(**kwargs)
         mutual_info_score = self.mutual_info_score(**kwargs).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
@@ -605,6 +611,7 @@ class DataFrame(pd.DataFrame):
 
     def permutation_importance_plot(self, **kwargs):
         """Перемешивающий метод на столбчатой диаграмме"""
+        target = self.__get_target(**kwargs)
         permutation_importance = self.permutation_importance(**kwargs).sort_values(ascending=True)
 
         plt.figure(figsize=kwargs.get('figsize', (9, 9)))
@@ -1427,6 +1434,11 @@ if __name__ == '__main__':
             df_train, df_test = df.train_test_split(test_size=0.25)
             print(f'df_train.shape: {df_train.shape}')
             print(f'df_test.shape: {df_test.shape}')
+
+        if 0:
+            print(Fore.YELLOW + f'{DataFrame.__getitem__}' + Fore.RESET)
+            print(df['mean_radius'])
+            print(df[['mean_radius', 'mean_texture']])
 
         if 0:
             print(df.isna().sum())
