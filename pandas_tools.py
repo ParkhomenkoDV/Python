@@ -79,7 +79,7 @@ class DataFrame(pd.DataFrame):
 
     @classmethod
     def version(cls) -> str:
-        version = '6.0'
+        version = '6.1'
         print('WOE')
 
         return version
@@ -91,7 +91,10 @@ class DataFrame(pd.DataFrame):
     def __getitem__(self, item):
         """Возвращение DataFrame типа DataFrame от колонок"""
         # assert в родительском классе
-        return DataFrame(super().__getitem__(item))
+        if type(item) is str:
+            return super().__getitem__(item)  # pd.Series
+        else:
+            return DataFrame(super().__getitem__(item))  # DataFrame
 
     @property
     def target(self) -> str:
