@@ -79,7 +79,7 @@ class DataFrame(pd.DataFrame):
 
     @classmethod
     def version(cls) -> str:
-        version = '6.1'
+        version = '6.2'
         print('WOE')
 
         return version
@@ -101,14 +101,14 @@ class DataFrame(pd.DataFrame):
         return self.__target
 
     @target.setter
-    def target(self, target: str):
+    def target(self, target: str) -> None:
         if target in self.columns:
             self.__target = target
         else:
             raise Exception(f'target "{self.__target}" not in {self.columns.to_list()}')
 
     @target.deleter
-    def target(self):
+    def target(self) -> None:
         self.__target = ''
 
     def __get_target(self, **kwargs) -> str:
@@ -118,80 +118,71 @@ class DataFrame(pd.DataFrame):
         assert target in self.columns, f'target "{self.__target}" not in {self.columns.to_list()}'
         return target
 
-    def underline_columns(self):
+    def underline_columns(self) -> None:
         """Замена пробелов в названии столбцов нижним подчеркиванием _"""
         for column in self.columns: self.rename(columns={column: column.replace(' ', '_')}, inplace=True)
 
-    def encode_label(self, columns: list[str] | tuple[str], drop=False, inplace=False):
+    def encode_label(self, column: str, drop=False, inplace=False) -> object | None:
         """Преобразование n категорий в числа от 1 до n"""
-        assert type(columns) in (list, tuple)
-        assert all(map(lambda column: column in self.columns, columns))
+        assert column in self.columns
 
         df = DataFrame()
-        for column in columns:
-            le = LabelEncoder()
-            labels = le.fit_transform(self[column])
-            df[column + '_label'] = labels
-        if drop: self.__init__(self.drop(columns, axis=1))
+        le = LabelEncoder()
+        labels = le.fit_transform(self[column])
+        df[column + '_label'] = labels
+        if drop: self.__init__(self.drop(column, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
         else:
             return df
 
-    def encode_one_hot(self, columns: list[str] | tuple[str], drop=False, inplace=False):
+    def encode_one_hot(self, column: str, drop=False, inplace=False) -> object | None:
         """Преобразование n значений каждой категории в n бинарных категорий"""
-        assert type(columns) in (list, tuple)
-        assert all(map(lambda column: column in self.columns, columns))
+        assert column in self.columns
 
         ohe = OneHotEncoder(handle_unknown='ignore')
-        dummies = ohe.fit_transform(self[columns])
+        dummies = ohe.fit_transform(self[column])
         df = DataFrame(dummies.toarray(), columns=ohe.get_feature_names_out())
-        if drop: self.__init__(self.drop(columns, axis=1))
+        if drop: self.__init__(self.drop(column, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
         else:
             return df
 
-    def encode_count(self, columns: list[str] | tuple[str], drop=False, inplace=False):
+    def encode_count(self, column: str, drop=False, inplace=False) -> object | None:
         """Преобразование значений каждой категории в количество этих значений"""
-        assert type(columns) in (list, tuple)
-        assert all(map(lambda column: column in self.columns, columns))
+        assert column in self.columns
 
         df = DataFrame()
-        for column in columns:
-            column_count = self[column].value_counts().to_dict()
-            df[column + '_count'] = self[column].map(column_count)
-        if drop: self.__init__(self.drop(columns, axis=1))
+        column_count = self[column].value_counts().to_dict()
+        df[column + '_count'] = self[column].map(column_count)
+        if drop: self.__init__(self.drop(column, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
         else:
             return df
 
-    def encode_ordinal(self, columns: list[str] | tuple[str], drop=False, inplace=False):
+    def encode_ordinal(self, column: str, drop=False, inplace=False) -> object | None:
         """Преобразование категориальных признаков в числовые признаки с учетом порядка или их весов"""
-        assert type(columns) in (list, tuple)
-        assert all(map(lambda column: column in self.columns, columns))
+        assert column in self.columns
 
         df = DataFrame()
-        for column in columns:
-            oe = OrdinalEncoder()
-            df[column + '_ordinal'] = DataFrame(oe.fit_transform(self[[column]]))
-        if drop: self.__init__(self.drop(columns, axis=1))
+        oe = OrdinalEncoder()
+        df[column + '_ordinal'] = DataFrame(oe.fit_transform(self[[column]]))
+        if drop: self.__init__(self.drop(column, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
         else:
             return df
 
-    def encode_target(self, columns: list[str] | tuple[str], drop=False, inplace=False):
+    def encode_target(self, column: str, drop=False, inplace=False) -> object | None:
         """"""
-        assert type(columns) in (list, tuple)
-        assert all(map(lambda column: column in self.columns, columns))
+        assert column in self.columns
 
         df = DataFrame()
-        for column in columns:
-            te = TargetEncoder()
-            df[column + '_target'] = DataFrame(te.fit_transform(X=df.nom_0, y=df.Target))
-        if drop: self.__init__(self.drop(columns, axis=1))
+        te = TargetEncoder()
+        df[column + '_target'] = DataFrame(te.fit_transform(X=df.nom_0, y=df.Target))
+        if drop: self.__init__(self.drop(column, axis=1))
         if inplace:
             self.__init__(pd.concat([self, df], axis=1))
         else:
@@ -488,46 +479,47 @@ class DataFrame(pd.DataFrame):
         model.fit(x, y)
         return model  # , model.coef_ != 0
 
-    # @decorators.warns('ignore')
-    def l1_models(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs) -> list:
+    @decorators.warns('ignore')
+    def l1_models(self, l1=2 ** np.linspace(-10, 10, 100), scale=False, early_stopping=False, **kwargs) -> list:
         """Линейные модели с разной L1-регуляризацией"""
         target = self.__get_target(**kwargs)
-        assert isiter(l1)
+        assert type(l1) in (tuple, list, np.ndarray)
         assert all(isinstance(el, (float, int)) for el in l1)
 
         x, y = self.feature_target_split(target=target)
         x = StandardScaler().fit_transform(x) if scale else x
 
+        '''
         with mp.Pool(4) as pool:
             models = pool.starmap(self.__fit_l1_model, [(x, y, alpha, kwargs) for alpha in l1])
 
         self.__l1_models = [m[0] for m in models]
         return self.__l1_models
+        '''
 
         # TODO: multiprocessing
-        self.__l1_models = list()
+        l1_models = list()
         for alpha in tqdm(l1, desc='Fitting L1-models'):
             model = Lasso(alpha=alpha,
                           max_iter=kwargs.pop('max_iter', 1_000),
                           tol=kwargs.pop('tol', 0.000_1),
                           random_state=kwargs.pop('random_state', None))
             model.fit(x, y)
-            self.__l1_models.append(model)
+            l1_models.append(model)
             if early_stopping and all(map(lambda c: c == 0, model.coef_)): break
-        return self.__l1_models
+        return l1_models
 
-    def l1_importance(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
+    def l1_importance(self, l1=2 ** np.linspace(-10, 10, 100), scale=False, early_stopping=False, **kwargs):
         """Коэффициенты признаков линейной моедли с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
-        if not hasattr(self, '_DataFrame__l1_models'):
-            self.__l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
+        l1_models = self.l1_models(l1=l1, scale=scale, early_stopping=early_stopping, target=target)
 
-        df = DataFrame([l1_model.coef_ for l1_model in self.__l1_models], columns=x.columns)
+        df = DataFrame([l1_model.coef_ for l1_model in l1_models], columns=x.columns)
         return DataFrame(pd.concat([pd.DataFrame({'L1': l1}), df], axis=1))
 
-    def l1_importance_plot(self, l1=tuple(2 ** np.linspace(-10, 10, 100)), scale=False, early_stopping=False, **kwargs):
+    def l1_importance_plot(self, l1=2 ** np.linspace(-10, 10, 100), scale=False, early_stopping=False, **kwargs):
         """Построение коэффициентов признаков линейных моделей с L1-регуляризацией"""
         target = self.__get_target(**kwargs)
 
@@ -567,9 +559,7 @@ class DataFrame(pd.DataFrame):
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
-        result = dict()
-        for column in x:
-            result[column] = mutual_info_score(x[column], y)
+        result = {column: mutual_info_score(x[column], y) for column in x}
         result = sorted(result.items(), key=lambda x: x[1], reverse=True)
         return pd.Series(dict(result))
 
@@ -844,7 +834,7 @@ class DataFrame(pd.DataFrame):
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
         x_train, x_test, y_train, y_test = train_test_split(x, y,  # stratify=y,  # ломает регрессию
-                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            test_size=kwargs.get('test_size', DataFrame.test_size),
                                                             shuffle=True, random_state=0)
 
         catboost_params = {'iterations': kwargs.pop('iterations', 100),  # n_estimators
@@ -887,8 +877,8 @@ class DataFrame(pd.DataFrame):
         feature_importance = dict(filter(lambda item: item[1] != 0, feature_importance.items()))
         feature_importance = dict(sorted(feature_importance.items(), key=lambda i: i[1]))
         plt.figure(figsize=kwargs.pop('figsize', (12, len(feature_importance) / 2.54 / 1.5)))
-        plt.xlabel('catboost_importance', fontweight='bold')
-        plt.ylabel('features', fontweight='bold')
+        plt.xlabel('catboost_importance', fontsize=12)
+        plt.ylabel('features', fontsize=12)
         plt.barh(feature_importance.keys(), feature_importance.values(), label='importance non-zero features')
         plt.legend(loc='lower right')
         plt.grid(kwargs.pop('grid', True))
@@ -1213,11 +1203,11 @@ class DataFrame(pd.DataFrame):
 
         pca = PrincipalComponentAnalysis(n_components=n_components)
         x_reduced = DataFrame(pca.fit_transform(x, y))
-        print(
-            f'Объем вариации информации: {pca.explained_variance_ratio_}')  # = объем важных данных по осям (потеря до 20% приемлема)
+        # объем важных данных по осям (потеря до 20% приемлема)
+        print(f'Объем вариации информации: {pca.explained_variance_ratio_}')
         print(f'Сингулярные значения: {pca.singular_values_}')
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
-                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            test_size=kwargs.get('test_size', DataFrame.test_size),
                                                             shuffle=True, random_state=0)
         if kwargs.get('test_size', None):
             model = KNeighborsClassifier().fit(x_train, y_train)
@@ -1333,12 +1323,8 @@ class DataFrame(pd.DataFrame):
         assert type(fmt) is int and fmt >= 0
         plt.figure(figsize=kwargs.get('figsize', (12, 12)))
         plt.title(kwargs.get('title', 'corrplot'), fontsize=16, fontweight='bold')
-        corr = self.corr()
-        n = corr.shape[0]
-        for i in range(n):
-            for j in range(i + 1, n):
-                corr.iloc[i, j] = -1
-        sns.heatmap(corr, annot=True, fmt=f'.{fmt}f', cmap='RdYlGn')
+        sns.heatmap(self.corr(), annot=True, fmt=f'.{fmt}f', annot_kws={'rotation': 45}, cmap='RdYlGn', square=True,
+                    vmin=-1, vmax=1)
         plt.show()
         if kwargs.get('savefig', False): export2(plt, file_name=kwargs.get('title', 'corrplot'), file_extension='png')
 
@@ -1438,40 +1424,43 @@ if __name__ == '__main__':
             print(f'df_train.shape: {df_train.shape}')
             print(f'df_test.shape: {df_test.shape}')
 
-        if 0:
-            print(Fore.YELLOW + f'{DataFrame.__getitem__}' + Fore.RESET)
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.__getitem__.__name__}' + Fore.RESET)
             print(df['mean_radius'])
             print(df[['mean_radius', 'mean_texture']])
 
-        if 0:
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.isna.__name__}' + Fore.RESET)
             print(df.isna().sum())
 
-        if 0:
+        if 1:
+            print(Fore.YELLOW + f'{DataFrame.detect_outliers.__name__}' + Fore.RESET)
+            print(df.detect_outliers('Sigma'))
+            print(df.detect_outliers('Tukey'))
+            print(df.detect_outliers('Shovene'))
+
+        if 1:
             print(Fore.YELLOW + f'{DataFrame.l1_models.__name__}' + Fore.RESET)
-            l1 = list(2 ** np.linspace(-10, 0, 1_000))
+            l1 = 2 ** np.linspace(-10, 0, 1_000)
             print(df.l1_models(l1=l1, max_iter=1_000, tol=0.000_1))
             print(df.l1_importance(l1=l1))
             df.l1_importance_plot(l1=l1)
             print(df.select_l1_features(5))
 
-        if 0:
+        if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features.__name__}' + Fore.RESET)
             print(df.catboost_importance_features())
             print(df.catboost_importance_features(returns='model'))
             print(df.catboost_importance_features(iterations=300, learning_rate=0.1, verbose=30))
             print(df.catboost_importance_features(iterations=3_000, learning_rate=0.01, verbose=False))
 
-        if 0:
+        if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_plot.__name__}' + Fore.RESET)
             df.catboost_importance_features_plot(verbose=10)
 
-        if 0:
+        if 1:
             print(Fore.YELLOW + f'{DataFrame.catboost_importance_features_shap.__name__}' + Fore.RESET)
             df.catboost_importance_features_shap(verbose=20)
-
-        if 0:
-            print(Fore.YELLOW + f'{DataFrame.catboost_feature_evaluation.__name__}' + Fore.RESET)
-            print(df.catboost_feature_evaluation())
 
         if 1:
             print(Fore.YELLOW + f'{DataFrame.confidence_interval.__name__}' + Fore.RESET)
