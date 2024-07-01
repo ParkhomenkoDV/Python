@@ -75,6 +75,14 @@ from tools import isiter, export2
 
 class DataFrame(pd.DataFrame):
     """Расширенный класс pandas.DataFrame"""
+    test_size = 0.25  # размер тестовой выборки
+
+    @classmethod
+    def version(self) -> str:
+        version = 5.2
+        print('return DataFrame from df["column""]')
+
+        return version
 
     def __init__(self, *args, **kwargs):
         super(DataFrame, self).__init__(*args, **kwargs)
@@ -398,8 +406,8 @@ class DataFrame(pd.DataFrame):
     def test(self, A: str, B: str, relationship: bool, method: str = 'ttest') -> tuple:
         """Тест-сравнение вариации двух выборок (есть ли отличия?)"""
         # pvalue = адекватность 0 гипотезы. Чем меньше pvalue, тем более вероятна верна 1 гипотеза
-        # "pvalue превоскходит уровень значимости 5%" = pvalue < 5%! Смирись с этим
-        # по pvalue НЕЛЬЗЯ сравниваться количественно!!! pvalue говорит: "отклонем/принимаем 0 гипотезу!"
+        # "pvalue превосходит уровень значимости 5%" = pvalue < 5%! Смирись с этим
+        # по pvalue НЕЛЬЗЯ сравниваться количественно!!! pvalue говорит: "отклоняем/принимаем 0 гипотезу!"
         assert A in self.columns and B in self.columns
         assert type(relationship) is bool
         assert type(method) is str
@@ -712,7 +720,7 @@ class DataFrame(pd.DataFrame):
         x_reduced = DataFrame(sp.fit_transform(x, y), columns=x.columns[sp.get_support()])
 
         x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y, # ломает регрессию
-                                                            test_size=kwargs.get('test_size', 0.25),
+                                                            test_size=kwargs.get('test_size', DataFrame.test_size),
                                                             shuffle=True, random_state=0)
         if kwargs.get('test_size', None):
             for model in (KNeighborsClassifier(), KNeighborsRegressor()):
@@ -766,7 +774,7 @@ class DataFrame(pd.DataFrame):
         target = self.__get_target(**kwargs)
         x, y = self.feature_target_split(target=target)
 
-        assert type(max_features) is int, f'{self.assert_sms} type(max_features) is int'
+        assert type(max_features) is int
 
         for model in (RandomForestClassifier(), RandomForestRegressor()):
             sfm = SelectFromModel(model, prefit=False, max_features=max_features, threshold=threshold)
@@ -776,7 +784,7 @@ class DataFrame(pd.DataFrame):
                 continue
 
             x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
-                                                                test_size=kwargs.get('test_size', 0.25),
+                                                                test_size=kwargs.get('test_size', DataFrame.test_size),
                                                                 shuffle=True, random_state=0)
             if kwargs.get('test_size', None):
                 model.fit(x_train, y_train)
@@ -804,7 +812,7 @@ class DataFrame(pd.DataFrame):
             except Exception as exception:
                 continue
             x_train, x_test, y_train, y_test = train_test_split(x_reduced, y,  # stratify=y,  # ломает регрессию
-                                                                test_size=kwargs.get('test_size', 0.25),
+                                                                test_size=kwargs.get('test_size', DataFrame.test_size),
                                                                 shuffle=True, random_state=0)
             if kwargs.get('test_size', None):
                 model.fit(x_train, y_train)
