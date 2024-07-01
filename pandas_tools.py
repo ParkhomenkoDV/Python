@@ -78,7 +78,7 @@ class DataFrame(pd.DataFrame):
     test_size = 0.25  # размер тестовой выборки
 
     @classmethod
-    def version(self) -> str:
+    def version(cls) -> str:
         version = 5.2
         print('return DataFrame from df["column""]')
 
